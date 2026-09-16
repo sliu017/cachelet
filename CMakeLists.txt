@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(Cachelet VERSION 0.1 LANGUAGES CXX)
+add_library(cachelet src/cache.cpp)
+target_compile_features(cachelet PUBLIC cxx_std_20)
+set_target_properties(cachelet PROPERTIES CXX_STANDARD_REQUIRED ON)
+target_include_directories(cachelet PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

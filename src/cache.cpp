@@ -1,7 +1,19 @@
+#include "cachelet/cache.hpp"
+
+#include <optional>
 #include <unordered_map>
 #include <string>
 
 
-int main(){
+void Cachelet::Cache::set(std::string const &key, std::string const &value){
+    cache_map.insert_or_assign(key, value);
+}
 
+std::optional<std::string> Cachelet::Cache::get(std::string const &key){
+    auto it = cache_map.find(key);
+    if(it != cache_map.end()){
+        return it->second;
+    } else {
+        return std::nullopt;
+    }
 }
