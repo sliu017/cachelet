@@ -22,3 +22,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 target_link_libraries(cache_test PUBLIC cachelet GTest::gtest_main)
 
+option(ENABLE_ASAN "Enable AddressSanitizer" ON)
+if(ENABLE_ASAN)
+    target_compile_options(cachelet PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(cachelet PUBLIC -fsanitize=address,undefined)
+endif()

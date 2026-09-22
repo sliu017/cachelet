@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "cachelet/cache.hpp"
 
+#include <vector>
+
 // To run:
 // cmake --build build
 // ./build/cache_test
@@ -73,3 +75,10 @@ TEST(CacheTest, SizeOfCacheAfterKeyDeletes){
     std::size_t result = test_cache.size();
     EXPECT_EQ(result, 1);
 }
+
+// Uncomment to check ASan's presence on running the test suite.
+// TEST(ASanTest, CheckASanPresence){
+//     std::vector<int> vec(5);
+//     int result = vec[10]; // should trigger asan
+//     EXPECT_EQ(result, 0);
+// }
