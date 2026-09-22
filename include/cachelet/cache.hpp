@@ -13,6 +13,7 @@ namespace Cachelet {
         // just start with the fundamental two
         void set(std::string const &key, std::string const &value);
         std::optional<std::string> get(std::string const &key);
+        bool del(std::string const &key);
     };
 }
 

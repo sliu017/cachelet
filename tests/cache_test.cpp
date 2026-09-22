@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 #include "cachelet/cache.hpp"
 
+// To run:
+// cmake --build build
+// ./build/cache_test
+
   // (suite of tests, specific test)
 TEST(CacheTest, SetAndGetKey){ // set a key and get its value
     Cachelet::Cache test_cache;
@@ -22,4 +26,26 @@ TEST(CacheTest, GetOverwrittenKey){
     test_cache.set("Australia", "Canberra");
     std::optional<std::string> result = test_cache.get("Australia");
     EXPECT_EQ(result, "Canberra");
+}
+
+TEST(CacheTest, DeleteKeyThatExists){
+    Cachelet::Cache test_cache;
+    test_cache.set("Argentina", "Buenos Aires");
+    bool result = test_cache.del("Argentina");
+    EXPECT_EQ(result, true);
+}
+
+TEST(CacheTest, DeleteKeyThatDoesNotExist){
+    Cachelet::Cache test_cache;
+    test_cache.set("Morocco", "Rabat");
+    bool result = test_cache.del("Moldova");
+    EXPECT_EQ(result, false);
+}
+
+TEST(CacheTest, GetDeletedKey){
+    Cachelet::Cache test_cache;
+    test_cache.set("Ukraine", "Kyiv");
+    test_cache.del("Ukraine");
+    std::optional<std::string> result = test_cache.get("Ukraine");
+    EXPECT_EQ(result, std::nullopt);
 }
