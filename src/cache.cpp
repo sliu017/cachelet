@@ -23,9 +23,13 @@ std::optional<std::string> Cachelet::Cache::get(std::string const &key){
 bool Cachelet::Cache::del(std::string const &key){
     auto it = cache_map.find(key);
     if(it != cache_map.end()){
-        cache_map.erase(key);
+        cache_map.erase(it);
         return true;
     } else {
         return false;
     }
+}
+
+std::size_t Cachelet::Cache::size() const{
+    return cache_map.size();
 }

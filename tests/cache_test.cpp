@@ -32,14 +32,14 @@ TEST(CacheTest, DeleteKeyThatExists){
     Cachelet::Cache test_cache;
     test_cache.set("Argentina", "Buenos Aires");
     bool result = test_cache.del("Argentina");
-    EXPECT_EQ(result, true);
+    EXPECT_TRUE(result);
 }
 
 TEST(CacheTest, DeleteKeyThatDoesNotExist){
     Cachelet::Cache test_cache;
     test_cache.set("Morocco", "Rabat");
     bool result = test_cache.del("Moldova");
-    EXPECT_EQ(result, false);
+    EXPECT_FALSE(result);
 }
 
 TEST(CacheTest, GetDeletedKey){
@@ -48,4 +48,28 @@ TEST(CacheTest, GetDeletedKey){
     test_cache.del("Ukraine");
     std::optional<std::string> result = test_cache.get("Ukraine");
     EXPECT_EQ(result, std::nullopt);
+}
+
+TEST(CacheTest, SizeOfEmptyCache){
+    Cachelet::Cache test_cache;
+    std::size_t result = test_cache.size();
+    EXPECT_EQ(result, 0);
+}
+
+TEST(CacheTest, SizeOfPopulatedCache){
+    Cachelet::Cache test_cache;
+    test_cache.set("Norway", "Oslo");
+    test_cache.set("Maldives", "Male");
+    test_cache.set("Malaysia", "Kuala Lumpur");
+    std::size_t result = test_cache.size();
+    EXPECT_EQ(result, 3);
+}
+
+TEST(CacheTest, SizeOfCacheAfterKeyDeletes){
+    Cachelet::Cache test_cache;
+    test_cache.set("Finland", "Helsinki");
+    test_cache.set("Nigeria", "Abuja");
+    test_cache.del("Finland");
+    std::size_t result = test_cache.size();
+    EXPECT_EQ(result, 1);
 }
