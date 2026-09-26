@@ -9,7 +9,7 @@
 namespace Cachelet {
     class Cache {
         private:
-        std::unordered_map<std::string,std::string> cache_map; // no longer needed after we put our value in our Entry
+        // std::unordered_map<std::string,std::string> cache_map; // no longer needed after we put our value in our Entry
         struct Entry {
             std::string key; // acts as a double-ended pathway to key_to_entry map
             std::string value;

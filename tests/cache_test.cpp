@@ -76,6 +76,40 @@ TEST(CacheTest, SizeOfCacheAfterKeyDeletes){
     EXPECT_EQ(result, 1);
 }
 
+TEST(CacheTest, LRUEvictsCorrectly){
+    Cachelet::Cache test_cache(3);
+    test_cache.set("Mexico", "Mexico City");
+    test_cache.set("Jamaica", "Kingston");
+    test_cache.set("Russia", "Moscow");
+    test_cache.set("Turkey", "Ankara");
+    std::optional<std::string> result = test_cache.get("Mexico"); // Expect eviction for old value
+    EXPECT_EQ(result, std::nullopt);
+}
+
+TEST(CacheTest, LRUBringsToFrontOnGet){
+    Cachelet::Cache test_cache(2);
+    test_cache.set("Netherlands", "Amsterdam");
+    test_cache.set("South Korea", "Seoul");
+    test_cache.get("Netherlands"); // moves to front
+    test_cache.set("Spain", "Madrid");
+    std::optional<std::string> result = test_cache.get("Netherlands");
+    EXPECT_EQ(result, "Amsterdam"); // shouldn't be null
+    result = test_cache.get("South Korea");
+    EXPECT_EQ(result, std::nullopt);
+}
+
+TEST(CacheTest, LRUBringsToFrontOnSet){
+    Cachelet::Cache test_cache(2);
+    test_cache.set("Netherlands", "Amsterdam");
+    test_cache.set("South Korea", "Seoul");
+    test_cache.set("Netherlands", "Amsterdam"); // moves to front
+    test_cache.set("Spain", "Madrid");
+    std::optional<std::string> result = test_cache.get("Netherlands");
+    EXPECT_EQ(result, "Amsterdam"); // shouldn't be null
+    result = test_cache.get("South Korea");
+    EXPECT_EQ(result, std::nullopt);
+}
+
 // Uncomment to check ASan's presence on running the test suite.
 // TEST(ASanTest, CheckASanPresence){
 //     std::vector<int> vec(5);
