@@ -100,7 +100,7 @@ TEST(CacheTest, LRUBringsToFrontOnGet){
 
 TEST(CacheTest, LRUBringsToFrontOnSet){
     Cachelet::Cache test_cache(2);
-    test_cache.set("Netherlands", "Amsterdam");
+    test_cache.set("Netherlands", "Maastricht"); // incorrect value at first, to ensure the update is read
     test_cache.set("South Korea", "Seoul");
     test_cache.set("Netherlands", "Amsterdam"); // moves to front
     test_cache.set("Spain", "Madrid");
