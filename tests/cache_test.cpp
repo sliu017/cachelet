@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 #include "cachelet/cache.hpp"
 
+#include <thread>
 #include <vector>
+
+using namespace std::chrono_literals;
 
 // To run:
 // cmake --build build
@@ -109,6 +112,65 @@ TEST(CacheTest, LRUBringsToFrontOnSet){
     result = test_cache.get("South Korea");
     EXPECT_EQ(result, std::nullopt);
 }
+
+TEST(CacheTest, KeyWithShortTTLExpires){
+    Cachelet::Cache test_cache;
+    test_cache.set("France", "Paris", 10ms);
+    std::optional<std::string> result = test_cache.get("France");
+    EXPECT_EQ(result, "Paris");
+    std::this_thread::sleep_for(10ms);
+    // Key should have expired
+    result = test_cache.get("France");
+    EXPECT_EQ(result, std::nullopt);
+}
+
+TEST(CacheTest, KeyWithLongTTLPersists){
+    Cachelet::Cache test_cache;
+    test_cache.set("France", "Paris", 300ms);
+    std::optional<std::string> result = test_cache.get("France");
+    EXPECT_EQ(result, "Paris");
+    std::this_thread::sleep_for(10ms);
+    result = test_cache.get("France");
+    EXPECT_EQ(result, "Paris");
+}
+
+// do we rly need this test
+TEST(CacheTest, KeyWithNoTTLPersists){
+    Cachelet::Cache test_cache;
+    test_cache.set("Canada", "Ottawa");
+    std::this_thread::sleep_for(10ms);
+    std::optional<std::string> result = test_cache.get("Canada");
+    EXPECT_EQ(result, "Ottawa");
+}
+
+TEST(CacheTest, SetKeyWithTTLOverridesTTL){
+    Cachelet::Cache test_cache;
+    test_cache.set("Peru", "Lima", 10ms);
+
+    test_cache.set("Peru", "Lima", 50ms);
+    std::optional<std::string> result = test_cache.get("Peru"); 
+    EXPECT_EQ(result, "Lima");   
+
+    std::this_thread::sleep_for(15ms);
+    // Should still exist, because the TTL was updated to a longer duration.
+    result = test_cache.get("Peru");
+    EXPECT_EQ(result, "Lima");   
+}
+
+TEST(CacheTest, SetKeyWithNoTTLOverridesTTL){
+    Cachelet::Cache test_cache;
+    test_cache.set("Peru", "Lima", 10ms);
+
+    test_cache.set("Peru", "Lima");
+    std::optional<std::string> result = test_cache.get("Peru"); 
+    EXPECT_EQ(result, "Lima");   
+
+    std::this_thread::sleep_for(15ms);
+    // Should still exist, because the TTL was overriden (now no TTL).
+    result = test_cache.get("Peru");
+    EXPECT_EQ(result, "Lima");   
+}
+
 
 // Uncomment to check ASan's presence on running the test suite.
 // TEST(ASanTest, CheckASanPresence){
