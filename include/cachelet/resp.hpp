@@ -8,8 +8,8 @@ namespace Cachelet {
     namespace resp {
         enum class Status {Complete, Incomplete, Error};
         struct ParseResult {
-            Status status;
-            std::size_t bytes_consumed;
+            Status status = Status::Incomplete;
+            std::size_t bytes_consumed = 0;
             std::vector<std::string> command;
         };
         ParseResult parse(const std::string &input);
