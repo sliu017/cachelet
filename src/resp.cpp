@@ -23,7 +23,11 @@ Cachelet::resp::ParseResult parse(const std::string &input){
     if(input.length() <= 1 || input[0] != '*'){
         // Too short OR does not start with *X!
         // Adjust status accordingly
-        response.status = input.length() <= 1 ? Status::Incomplete : Status::Error;
+        if(input.length() >= 1){
+            response.status = input[0] == '*' ? Status::Incomplete : Status::Error;
+        } else {
+            response.status = Status::Incomplete;
+        }
         return response; // need to break early
     }
     std::string token_count_string;
@@ -41,6 +45,11 @@ Cachelet::resp::ParseResult parse(const std::string &input){
     int token_count;
     try {
         token_count = std::stoi(token_count_string);
+        // Can't have a negative token count!
+        if(token_count < 0){
+            response.status = Status::Error;
+            return response;
+        }
     } catch (const std::invalid_argument &e){ // not convertible into an int
         response.status = Status::Error;
         return response; // need to break early
@@ -51,7 +60,7 @@ Cachelet::resp::ParseResult parse(const std::string &input){
 
     // If empty token count, we're done
     if(token_count == 0){
-        response.bytes_consumed = 1;
+        response.bytes_consumed = current_index + 2; // for the r, n, noting that current_index is currently at \r 
         response.command = command; 
         response.status = Status::Complete;
         return response;
@@ -59,14 +68,28 @@ Cachelet::resp::ParseResult parse(const std::string &input){
 
 
     // --------- SECTION: move ahead to the first token ---------
-    // should probably implement a check to ensure it's moving past precisely '\r\n', could use a substring?
-    while(current_index < input.size() && input[current_index] != '$'){
-        current_index++;
+    //  ensure it's moving past precisely '\r\n'
+    if(input[current_index] != '\r'){
+        response.status = Status::Error;
+        return response;
     }
+    current_index++;
     // Overflowing here means we did not find the first token that was promised to us
     if(current_index >= input.size()){
         return response;
     }
+    
+    if(input[current_index] != '\n'){
+        response.status = Status::Error;
+        return response;
+    }
+    current_index++;
+    // Overflowing here means we did not find the first token that was promised to us
+    if(current_index >= input.size()){
+        return response;
+    }
+
+
 
 
     // --------- SECTION: Parse all tokens according to the count ---------
@@ -87,6 +110,11 @@ Cachelet::resp::ParseResult parse(const std::string &input){
                 }
                 try {
                     this_token_size = std::stoi(token_size_string);
+                    // Can't have a negative token size!
+                    if(this_token_size < 0){
+                        response.status = Status::Error;
+                        return response;
+                    }                    
                 } catch (const std::invalid_argument &e){ // not convertible into an int
                     response.status = Status::Error;
                     return response; // need to break early
@@ -94,11 +122,28 @@ Cachelet::resp::ParseResult parse(const std::string &input){
                     response.status = Status::Error;
                     return response; // need to break early
                 }            
+        } else {
+            // Not correct format for reading token size, e.g. missing '$'
+            response.status = Status::Error;
+            return response;
         }
 
         // read string size of the token size we got
-        // first iterate to move past the \r we currently point to, then then \n that should follow it (maybe we should check this?)
-        current_index += 2;
+        // first iterate to move past the \r we currently point to, then then \n that should follow it 
+        if(input[current_index] != '\r'){
+            response.status = Status::Error; 
+            return response;
+        }
+        current_index++;
+        if(current_index >= input.size()){ return response; }
+        
+        if(input[current_index] != '\n'){
+            response.status = Status::Error; 
+            return response;
+        }
+        current_index++;
+        if(current_index >= input.size()){ return response; }
+
 
         // Note this could overflow, which means incomplete
         if(current_index >= input.size()){
@@ -130,18 +175,19 @@ Cachelet::resp::ParseResult parse(const std::string &input){
         // OK, good
         current_token++;
         current_index++;
-        response.bytes_consumed += this_token_size + token_count_string.size() + 3; // for the token, the size, 
-        // the $, and the two break chars
+
     }
     if(current_token == token_count){
         // read all tokens successfully
         response.command = command;
+        response.bytes_consumed = current_index;
         response.status = Status::Complete;
     }
-    if(current_index >= input.size()){
-        // there were still tokens left that weren't promised
-        // return incompl? not error i presume
-    }
+
+    // if(current_index >= input.size()){
+    //     // there were still tokens left that weren't promised
+    //     // return incompl? not error i presume
+    // }
     return response;
 
 }

@@ -59,6 +59,12 @@ TEST(ParseTest, ParseCorrectlyFormattedSizeInput){
     EXPECT_EQ(result.bytes_consumed, input.size());
 }
 // ---------------------------------------- Incomplete Input ---------------------------------------- //
+
+TEST(ParseTest, ParseEmptyRequest){
+    std::string input = "";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Incomplete);
+}
 TEST(ParseTest, ParseIncompleteNumberOfTokens){
     std::string input = "*4\r\n" // should be 3
                         "$3\r\n"
@@ -133,4 +139,51 @@ TEST(ParseTest, ParseMalformedInputMissingBreakInMiddle){
     EXPECT_EQ(result.status, Status::Error);
 }
 
+TEST(ParseTest, ParseMalformedInputJustADollarSymbol){
+    std::string input = "$";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
+
+TEST(ParseTest, ParseMalformedInputTokenCountNotAnInteger){
+    std::string input = "*hi\r\n"
+                        "$3\r\n"
+                        "GET\r\n"
+                        "$5\r\n"
+                        "Italy\r\n";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
+
+TEST(ParseTest, ParseMalformedInputIncorrectTokenSizeSymbol){ // e.g, not '$'
+    std::string input = "*1\r\n"
+                        "#4\r\n"
+                        "PING\r\n";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
+
+TEST(ParseTest, ParseMalformedInputNegativeTokenCount){
+    std::string input = "*-3\r\n"
+                        "$3\r\n"
+                        "SET\r\n"
+                        "$8\r\n"
+                        "Colombia\r\n"
+                        "$6\r\n"
+                        "Bogota\r\n";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
+
+TEST(ParseTest, ParseMalformedInputNegativeTokenSize){
+    std::string input = "*3\r\n"
+                        "$3\r\n"
+                        "SET\r\n"
+                        "$8\r\n"
+                        "Colombia\r\n"
+                        "$-6\r\n"
+                        "Bogota\r\n";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
 
