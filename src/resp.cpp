@@ -228,4 +228,26 @@ Cachelet::resp::ParseResult parse(const std::string &input){
 
 }
 
+std::string encode_simple_string(const std::string &response){
+    return '+' + response + "\r\n";
+}
+
+std::string encode_error(const std::string &response){
+    return '-' + response + "\r\n";
+}
+
+std::string encode_integer(std::int64_t response){
+    return ':' + std::to_string(response) + "\r\n";
+
+}
+std::string encode_bulk_string(const std::string &response){
+    // ex: encode_bulk_string("Lisbon") => "$6\r\nLisbon\r\n"
+    int size = response.size();
+    return '$' + std::to_string(size) + "\r\n" + response + "\r\n";
+}
+std::string encode_null_bulk_string(){
+    return "$-1\r\n";
+
+}
+
 }
