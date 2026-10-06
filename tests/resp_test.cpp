@@ -289,3 +289,54 @@ TEST(ParseTest, ParseMalformedInputTokenSizeTooLarge){
     ParseResult result = parse(input);
     EXPECT_EQ(result.status, Status::Error);
 }
+
+// ---------------------------------------- Encode Test ----------------------------------------
+TEST(EncodeTest, EncodeSimpleString){
+    EXPECT_EQ(encode_simple_string("OK"), "+OK\r\n");
+}
+
+TEST(EncodeTest, EncodeEmptySimpleString){
+    EXPECT_EQ(encode_simple_string(""), "+\r\n");
+}
+
+TEST(EncodeTest, EncodeError){
+    EXPECT_EQ(encode_error("ERROR: Invalid command."), "-ERROR: Invalid command.\r\n");
+}
+
+TEST(EncodeTest, EncodeEmptyError){
+    EXPECT_EQ(encode_error(""), "-\r\n");
+}
+
+TEST(EncodeTest, EncodeSmallInteger){
+    EXPECT_EQ(encode_integer(9), ":9\r\n");
+}
+
+TEST(EncodeTest, EncodeLargeInteger){
+    EXPECT_EQ(encode_integer(999999999), ":999999999\r\n");
+}
+
+// 15 9s
+TEST(EncodeTest, EncodeLarge64BitInteger){
+    EXPECT_EQ(encode_integer(999999999999999), ":999999999999999\r\n");
+}
+
+TEST(EncodeTest, EncodeNegativeInteger){
+    EXPECT_EQ(encode_integer(-720), ":-720\r\n");
+}
+
+TEST(EncodeTest, EncodeSmallBulkString){
+    EXPECT_EQ(encode_bulk_string("Lisbon"), "$6\r\nLisbon\r\n");
+}
+
+TEST(EncodeTest, EncodeBulkStringWithSpaces){
+    EXPECT_EQ(encode_bulk_string("Federated States of Micronesia"), 
+    "$30\r\nFederated States of Micronesia\r\n");
+}
+
+TEST(EncodeTest, EncodeEmptyBulkString){
+    EXPECT_EQ(encode_bulk_string(""), "$0\r\n");
+}
+
+TEST(EncodeTest, EncodeNullBulkString){
+    EXPECT_EQ(encode_null_bulk_string(), "$-1\r\n");
+}
