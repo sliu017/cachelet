@@ -58,6 +58,58 @@ TEST(ParseTest, ParseCorrectlyFormattedSizeInput){
     EXPECT_EQ(result.status, Status::Complete);
     EXPECT_EQ(result.bytes_consumed, input.size());
 }
+
+TEST(ParseTest, ParseValueContainingCRLF){
+    // parse a value containing '\r\n' (kind of a contrived example but i like my capitals theme lol)
+    std::string input = "*3\r\n"
+                        "$3\r\n"
+                        "SET\r\n"
+                        "$8\r\n"
+                        "Ethiopia\r\n"
+                        "$12\r\n"
+                        "Addis\r\nAbaba\r\n";
+    ParseResult result = parse(input);
+    std::vector<std::string> expected = {"SET", "Ethiopia", "Addis\r\nAbaba"};
+    EXPECT_EQ(result.status, Status::Complete);
+    EXPECT_EQ(result.command, expected);
+    EXPECT_EQ(result.bytes_consumed, input.size());
+}
+
+TEST(ParseTest, ParseEmptyValue){
+    // Fun fact: Nauru has no formally designated capital!
+    std::string input = "*3\r\n"
+                        "$3\r\n"
+                        "SET\r\n"
+                        "$5\r\n"
+                        "Nauru\r\n"
+                        "$0\r\n"
+                        "\r\n";
+    ParseResult result = parse(input);
+    std::vector<std::string> expected = {"SET", "Nauru", ""};
+    EXPECT_EQ(result.status, Status::Complete);
+    EXPECT_EQ(result.command, expected);
+    EXPECT_EQ(result.bytes_consumed, input.size());
+}
+
+// When given two (or more) complete commands, the parser's job is only to complete the first complete one & leave the rest in the buffer
+TEST(ParseTest, ParseTwoCompleteCommands){
+    std::string first = "*1\r\n"
+                        "$4\r\n"
+                        "PING\r\n";
+    std::string second = "*2\r\n"
+                        "$3\r\n"
+                        "GET\r\n"
+                        "$7\r\n"
+                        "Belarus\r\n";
+    ParseResult result = parse(first + second);
+    std::vector<std::string> expected = {"PING"};
+    EXPECT_EQ(result.status, Status::Complete);
+    EXPECT_EQ(result.command, expected);
+    EXPECT_EQ(result.bytes_consumed, first.size());
+}
+
+
+
 // ---------------------------------------- Incomplete Input ---------------------------------------- //
 
 TEST(ParseTest, ParseEmptyRequest){
@@ -105,12 +157,33 @@ TEST(ParseTest, ParseIncompleteCommand){
     EXPECT_EQ(result.status, Status::Complete);
     EXPECT_EQ(result.bytes_consumed, 14);
 
-    // erase consumed bytes here
+    // the server erases consumed bytes here
 
     ParseResult second = parse(input.substr(14));
     EXPECT_EQ(second.status, Status::Incomplete);
 }
 
+// Try every single "cutoff" point for errors
+TEST(ParseTest, ParseEveryPrefixIsIncomplete){
+    std::string input = "*3\r\n"
+                        "$3\r\n"
+                        "SET\r\n"
+                        "$10\r\n"
+                        "Uzbekistan\r\n"
+                        "$8\r\n"
+                        "Tashkent\r\n";
+    for(std::size_t i = 0; i < input.size(); i++){
+        ParseResult result = parse(input.substr(0, i));
+        EXPECT_EQ(result.status, Status::Incomplete) << "failed at prefix length " << i;
+    }
+}
+
+TEST(ParseTest, ParseEmptyArrayMissingNewline){
+    // where \r is present but not \n
+    std::string input = "*0\r";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Incomplete);
+}
 
 // ---------------------------------------- Malformed Input ---------------------------------------- //
 
@@ -187,3 +260,22 @@ TEST(ParseTest, ParseMalformedInputNegativeTokenSize){
     EXPECT_EQ(result.status, Status::Error);
 }
 
+TEST(ParseTest, ParseMalformedInputGarbageAfterTokenCount){
+    std::string input = "*3abc\r\n" // Unwanted characters after 3
+                        "$3\r\n"
+                        "SET\r\n"
+                        "$8\r\n"
+                        "Colombia\r\n"
+                        "$6\r\n"
+                        "Bogota\r\n";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
+
+TEST(ParseTest, ParseMalformedInputTokenSizeTooLarge){
+    std::string input = "*1\r\n"
+                        "$99999999999\r\n" // too large!
+                        "Liechtenstein\r\n";
+    ParseResult result = parse(input);
+    EXPECT_EQ(result.status, Status::Error);
+}
