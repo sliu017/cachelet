@@ -108,6 +108,15 @@ TEST(ParseTest, ParseTwoCompleteCommands){
     EXPECT_EQ(result.bytes_consumed, first.size());
 }
 
+TEST(ParseTest, ParseEmptyCommand){
+    std::string input = "*0\r\n";
+    ParseResult result = parse(input);
+    std::vector<std::string> expected = {};
+    EXPECT_EQ(result.status, Status::Complete);
+    EXPECT_EQ(result.command, expected);
+    EXPECT_EQ(result.bytes_consumed, input.size());
+}
+
 
 
 // ---------------------------------------- Incomplete Input ---------------------------------------- //
@@ -184,6 +193,7 @@ TEST(ParseTest, ParseEmptyArrayMissingNewline){
     ParseResult result = parse(input);
     EXPECT_EQ(result.status, Status::Incomplete);
 }
+
 
 // ---------------------------------------- Malformed Input ---------------------------------------- //
 

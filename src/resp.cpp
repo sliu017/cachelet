@@ -44,7 +44,15 @@ Cachelet::resp::ParseResult parse(const std::string &input){
     // --------- SECTION: counts the number of tokens according to the *X value ---------
     int token_count;
     try {
-        token_count = std::stoi(token_count_string);
+        std::size_t parsed_count = 0;
+        token_count = std::stoi(token_count_string, &parsed_count);
+        if(parsed_count != token_count_string.size()){
+            // means we found an invalid character at some point
+            response.status = Status::Error;
+            return response;
+            // (we still need the invalid_argument check since that catches a runtime error whereas the stoi method will stop,
+            // not throw upon reaching an invalid character)
+        }
         // Can't have a negative token count!
         if(token_count < 0){
             response.status = Status::Error;
@@ -58,9 +66,31 @@ Cachelet::resp::ParseResult parse(const std::string &input){
         return response; // need to break early
     }
 
-    // If empty token count, we're done
+    // If empty token count, we're done (excluding post processing)
     if(token_count == 0){
-        response.bytes_consumed = current_index + 2; // for the r, n, noting that current_index is currently at \r 
+        if(current_index >= input.size()){
+            return response; // JUST *0
+        }
+        if(input[current_index] != '\r'){
+            // technically shouldnt be able to reach here bc current_index should have either overflowed or reached \r 
+            response.status = Status::Error;
+            return response;
+        }
+
+        // try moving past \r to reach \n
+        current_index++;
+        if(current_index >= input.size()){
+            return response; // JUST *0\r
+        }
+        if(input[current_index] != '\n'){
+            // malformed input, \n should follow \r
+            response.status = Status::Error;
+            return response;
+        }
+        // move index past \n so it's accurate to the bytes consumed
+        current_index++;
+
+        response.bytes_consumed = current_index;
         response.command = command; 
         response.status = Status::Complete;
         return response;
@@ -109,12 +139,18 @@ Cachelet::resp::ParseResult parse(const std::string &input){
                     return response;
                 }
                 try {
-                    this_token_size = std::stoi(token_size_string);
+                    std::size_t parsed_count = 0;
+                    this_token_size = std::stoi(token_size_string, &parsed_count);
+                    if(parsed_count != token_size_string.size()){
+                        // means we found an invalid character at some point
+                        response.status = Status::Error;
+                        return response;
+                    }
                     // Can't have a negative token size!
                     if(this_token_size < 0){
                         response.status = Status::Error;
                         return response;
-                    }                    
+                    }           
                 } catch (const std::invalid_argument &e){ // not convertible into an int
                     response.status = Status::Error;
                     return response; // need to break early
