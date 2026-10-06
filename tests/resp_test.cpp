@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "cachelet/resp.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -320,6 +321,15 @@ TEST(EncodeTest, EncodeLarge64BitInteger){
     EXPECT_EQ(encode_integer(999999999999999), ":999999999999999\r\n");
 }
 
+TEST(EncodeTest, EncodeInt64Extremes){
+    EXPECT_EQ(encode_integer(INT64_MAX), ":9223372036854775807\r\n");
+    EXPECT_EQ(encode_integer(INT64_MIN), ":-9223372036854775808\r\n");
+}
+
+TEST(EncodeTest, EncodeZero){
+    EXPECT_EQ(encode_integer(0), ":0\r\n");
+}
+
 TEST(EncodeTest, EncodeNegativeInteger){
     EXPECT_EQ(encode_integer(-720), ":-720\r\n");
 }
@@ -333,8 +343,12 @@ TEST(EncodeTest, EncodeBulkStringWithSpaces){
     "$30\r\nFederated States of Micronesia\r\n");
 }
 
+TEST(EncodeTest, EncodeBulkStringContainingCRLF){
+    EXPECT_EQ(encode_bulk_string("hi\r\nthere"), "$9\r\nhi\r\nthere\r\n");
+}
+
 TEST(EncodeTest, EncodeEmptyBulkString){
-    EXPECT_EQ(encode_bulk_string(""), "$0\r\n");
+    EXPECT_EQ(encode_bulk_string(""), "$0\r\n\r\n");
 }
 
 TEST(EncodeTest, EncodeNullBulkString){
