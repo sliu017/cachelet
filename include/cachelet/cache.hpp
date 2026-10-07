@@ -20,6 +20,7 @@ namespace Cachelet {
         std::unordered_map<std::string, std::list<Entry>::iterator> key_to_entry_map; // need an iterator to access the data!
         const size_t MAX_ENTRIES;
 
+        // one source of truth for set functions such that we can toggle the (optional) ttl
         void setHelper(std::string const &key, std::string const &value, 
             std::optional<std::chrono::steady_clock::duration> const &ttl);
 

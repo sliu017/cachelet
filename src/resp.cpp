@@ -1,7 +1,9 @@
 #include "cachelet/resp.hpp"
 
+#include <cstdint>
 #include <iostream>
 #include <string>
+#include <vector>
 
 // such that there is no naming conflict with the method header, but we can use the namespace properties
 // while writing the method
