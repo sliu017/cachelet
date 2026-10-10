@@ -80,9 +80,24 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, std::vector<std::string> 
             wrong_arg_count = true;
         }
     } else if(command_name == "GET"){
-
+        if(command.size() == 2){
+            std::string key = command[1];
+            std::optional<std::string> value = cache.get(key);
+            if(!value){
+                return Cachelet::resp::encode_null_bulk_string();
+            } else {
+                return Cachelet::resp::encode_bulk_string(value.value());
+            }
+        } else {
+            wrong_arg_count = true;
+        }
     } else if(command_name == "DEL"){
-
+        if(command.size() == 2){
+            std::string key = command[1];
+            return Cachelet::resp::encode_integer(cache.del(key) ? 1 : 0);
+        } else {
+            wrong_arg_count = true;
+        }
     } else if(command_name == "DBSIZE"){
         if(command.size() == 1){
             return Cachelet::resp::encode_integer(cache.size());
