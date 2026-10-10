@@ -1,5 +1,5 @@
 #include "cachelet/dispatch.hpp"
-
+#include "cachelet/resp.hpp"
 
 #include <cctype> // for toupper
 #include <chrono>
@@ -25,7 +25,7 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, std::vector<std::string> 
     bool wrong_arg_count = false;
     if(command_name == "PING"){
         if(command.size() == 1){
-            return "+PONG\r\n";
+            return Cachelet::resp::encode_simple_string("PONG");
         } else {
             wrong_arg_count = true;
         }
@@ -36,7 +36,7 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, std::vector<std::string> 
             std::string value = command[2];
             if(command.size() == 3){
                 cache.set(key, value);
-                return "+OK\r\n";
+                return Cachelet::resp::encode_simple_string("OK");
             } else if(command.size() == 5){ // extraneous, but emphasize this is the TTL path
                 
                 std::string ttl_unit = command[3];
@@ -49,15 +49,15 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, std::vector<std::string> 
                     ttl_value = std::stoi(ttl_value_string, &parsed_count);
                     if(parsed_count != ttl_value_string.size()){
                         // there was some invalid input following the valid input
-                        return "-ERR invalid ttl value, should be an integer\r\n";
+                        return Cachelet::resp::encode_error("ERR invalid ttl value, should be an integer");
                     }
                     if(ttl_value <= 0){
-                        return "-ERR invalid expire time in 'set' command\r\n";
+                        return Cachelet::resp::encode_error("ERR invalid expire time in 'set' command");
                     }
                 } catch (const std::invalid_argument &e){ // not convertible into an int
-                    return "-ERR invalid ttl value, should be an integer\r\n";
+                    return Cachelet::resp::encode_error("ERR invalid ttl value, should be an integer");
                 } catch (const std::out_of_range &e){ // doesnt fit into an int
-                    return "-ERR ttl value too large\r\n";
+                    return Cachelet::resp::encode_error("ERR ttl value too large");
                 }
 
                 std::chrono::steady_clock::duration ttl;
@@ -70,11 +70,11 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, std::vector<std::string> 
                     ttl = std::chrono::milliseconds{ttl_value};
                 } else {
                     // Add support for more units later?
-                    return "-ERR unknown ttl unit '"+ttl_unit +"', try using PX or EX\r\n";
+                    return Cachelet::resp::encode_error("ERR unknown ttl unit '"+ttl_unit +"', try using PX or EX");
                 }
 
                 cache.set(key, value, ttl);
-                return "+OK\r\n";
+                return Cachelet::resp::encode_simple_string("OK");
             }
         } else {
             wrong_arg_count = true;
@@ -85,17 +85,17 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, std::vector<std::string> 
 
     } else if(command_name == "DBSIZE"){
         if(command.size() == 1){
-            return std::to_string(cache.size());
+            return Cachelet::resp::encode_integer(cache.size());
         } else {
             wrong_arg_count = true;
         }
     } else if(!wrong_arg_count){ // TODO if commands are added, add more else if blocks. 
         // unknown command
-        return "-ERR unknown command '" +command_name +"'\r\n";
+        return Cachelet::resp::encode_error("ERR unknown command '" +command_name +"'");
     }
 
     if(wrong_arg_count){
-        return "-ERR wrong number of arguments\r\n";
+        return Cachelet::resp::encode_error("ERR wrong number of arguments");
     }
     return "placeholder"; // eventually have to figure out what happens when we reach here... which in theory shouldn't be possible
 }
