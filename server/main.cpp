@@ -53,6 +53,31 @@ int main(){
     }
 
     std::cout << "Client connected!" << std::endl;
+
+    char buf[1024];
+    std::string full;
+    ssize_t bytes_received = 0;
+
+    while(true){
+        bytes_received = recv(client_sock, buf, sizeof(buf), 0);
+        if(bytes_received > 0){
+            full += buf;
+        } else if(bytes_received == 0){
+            // connection closed
+            break;
+        } else {
+            perror("recv");
+            break;
+        }
+    }
+    // std::cout << "test: " << full + "\r\n" << std::endl;
+
+    if(send(client_sock, "+PONG\r\n", 7, 0) == -1){
+        perror("send");
+        close(sock);
+        return -1;
+    }
+
     close(sock);
     close(client_sock);
     return 0;
