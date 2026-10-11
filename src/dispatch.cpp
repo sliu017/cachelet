@@ -4,9 +4,11 @@
 #include <cctype> // for toupper
 #include <chrono>
 
-void to_upper_string(std::string &str){
-    for(char &c : str){
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); // commands are case insensitive, keys/values aren't
+namespace {
+    void to_upper_string(std::string &str){
+        for(char &c : str){
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); // commands are case insensitive, keys/values aren't
+        }
     }
 }
 

@@ -7,6 +7,7 @@ add_library(cachelet
     src/dispatch.cpp
 )
 add_executable(cache_test)
+add_executable(cachelet-server server/main.cpp)
 target_sources(cache_test
     PUBLIC
         tests/cache_test.cpp
@@ -27,6 +28,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googletest)
 target_link_libraries(cache_test PUBLIC cachelet GTest::gtest_main)
+target_link_libraries(cachelet-server PRIVATE cachelet)
 
 option(ENABLE_ASAN "Enable AddressSanitizer" ON) # set to off to disable address sanitizer debugging utilities
 if(ENABLE_ASAN)
