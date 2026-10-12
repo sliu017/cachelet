@@ -51,6 +51,7 @@ void serve_client(int client_sock, Cache &cache){
         }
 
         while(!buffer.empty()){
+            // parse the bytes we just received in the buffer
             resp::ParseResult parse_result = resp::parse(buffer);
             if(parse_result.status == resp::Status::Error){
                 send_all(client_sock, resp::encode_error("ERR Protocol error: invalid bulk length"));
@@ -59,9 +60,11 @@ void serve_client(int client_sock, Cache &cache){
                 break; // need to receive more bytes
             } else {
                 std::string dispatch_result = Cachelet::dispatch(cache, parse_result.command);
+                // try to send the response to the client
                 if(!send_all(client_sock, dispatch_result)){
                     return;
                 }
+                // move the buffer forward after parsing this command's bytes
                 buffer = buffer.substr(parse_result.bytes_consumed);
             }
         }
@@ -86,7 +89,7 @@ int main(){
         return 1;
     }
 
-    struct sockaddr_in address;
+    struct sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
@@ -104,18 +107,22 @@ int main(){
     }
 
     std::cout << "Server listening on port " << PORT << std::endl;
-    int client_sock = accept(sock, nullptr, nullptr);
-    if(client_sock < 0){
-        perror("accept");
-        close(sock);
-        return -1;
+
+    while(true){
+        int client_sock = accept(sock, nullptr, nullptr);
+        if(client_sock < 0){
+            perror("accept");
+            continue;
+        }
+
+        std::cout << "Client connected!" << std::endl;
+
+
+        serve_client(client_sock, cache);
+
+        close(client_sock);
     }
-
-    std::cout << "Client connected!" << std::endl;
-
-    serve_client(client_sock, cache);
-
-    close(client_sock);
+    // Unreachable in theory because the only way to terminate the server, currently, is to ctrl c interrupt. 
     close(sock);
     return 0;
 
