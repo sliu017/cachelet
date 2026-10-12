@@ -13,9 +13,68 @@
 #include <iostream>
 #include <string>
 
+using namespace Cachelet;
+
+namespace {
+
+// need a safe way to send() in case it doesn't receive all bytes requested to be sent
+// therefore, whenever we send anything to the client, we must use this method
+bool send_all(int client_sock, std::string dispatch_result){
+    while(!dispatch_result.empty()){
+        ssize_t send_result = send(client_sock, dispatch_result.data(), dispatch_result.size(), 0);
+        if(send_result == -1){
+            perror("send");
+            return false;
+        } else if(send_result < dispatch_result.size()){
+            dispatch_result = dispatch_result.substr(send_result);
+        } else {
+            break;
+        }
+    }
+    return true;
+}
+
+void serve_client(int client_sock, Cache &cache){
+    char buf[1024];
+    std::string buffer;
+    ssize_t bytes_received = 0;
+
+    while(true){
+        bytes_received = recv(client_sock, buf, sizeof(buf), 0);
+        if(bytes_received > 0){
+            buffer.append(buf, bytes_received);
+        } else if(bytes_received == 0){
+            return; // connection closed
+        } else {
+            perror("recv");
+            return;
+        }
+
+        while(!buffer.empty()){
+            resp::ParseResult parse_result = resp::parse(buffer);
+            if(parse_result.status == resp::Status::Error){
+                send_all(client_sock, resp::encode_error("ERR Protocol error: invalid bulk length"));
+                return;
+            } else if(parse_result.status == resp::Status::Incomplete){
+                break; // need to receive more bytes
+            } else {
+                std::string dispatch_result = Cachelet::dispatch(cache, parse_result.command);
+                if(!send_all(client_sock, dispatch_result)){
+                    return;
+                }
+                buffer = buffer.substr(parse_result.bytes_consumed);
+            }
+        }
+    }
+}
+
+} // namespace
+
 int main(){
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     int PORT = 6379;
+    Cache cache; // TODO No way to input max items
+
     if(sock == -1){
         perror("socket");
         return 1;
@@ -54,32 +113,10 @@ int main(){
 
     std::cout << "Client connected!" << std::endl;
 
-    char buf[1024];
-    std::string full;
-    ssize_t bytes_received = 0;
+    serve_client(client_sock, cache);
 
-    while(true){
-        bytes_received = recv(client_sock, buf, sizeof(buf), 0);
-        if(bytes_received > 0){
-            full += buf;
-        } else if(bytes_received == 0){
-            // connection closed
-            break;
-        } else {
-            perror("recv");
-            break;
-        }
-    }
-    // std::cout << "test: " << full + "\r\n" << std::endl;
-
-    if(send(client_sock, "+PONG\r\n", 7, 0) == -1){
-        perror("send");
-        close(sock);
-        return -1;
-    }
-
-    close(sock);
     close(client_sock);
+    close(sock);
     return 0;
 
 }
