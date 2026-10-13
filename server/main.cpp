@@ -12,10 +12,22 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+
+#include "poll.h"
 
 using namespace Cachelet;
 
+struct Client {
+    std::string buffer;
+};
+
 namespace {
+
+    
+
 
 // need a safe way to send() in case it doesn't receive all bytes requested to be sent
 // therefore, whenever we send anything to the client, we must use this method
@@ -34,41 +46,40 @@ bool send_all(int client_sock, std::string dispatch_result){
     return true;
 }
 
-void serve_client(int client_sock, Cache &cache){
+bool serve_client(int client_sock, Client &client, Cache &cache){ // returns true if the connection is still open
     char buf[1024];
-    std::string buffer;
     ssize_t bytes_received = 0;
 
-    while(true){
-        bytes_received = recv(client_sock, buf, sizeof(buf), 0);
-        if(bytes_received > 0){
-            buffer.append(buf, bytes_received);
-        } else if(bytes_received == 0){
-            return; // connection closed
-        } else {
-            perror("recv");
-            return;
-        }
+    bytes_received = recv(client_sock, buf, sizeof(buf), 0);
+    if(bytes_received > 0){
+        client.buffer.append(buf, bytes_received);
+    } else if(bytes_received == 0){
+        return false; // connection closed
+    } else {
+        perror("recv");
+        return false;
+    }
 
-        while(!buffer.empty()){
-            // parse the bytes we just received in the buffer
-            resp::ParseResult parse_result = resp::parse(buffer);
-            if(parse_result.status == resp::Status::Error){
-                send_all(client_sock, resp::encode_error("ERR Protocol error: invalid bulk length"));
-                return;
-            } else if(parse_result.status == resp::Status::Incomplete){
-                break; // need to receive more bytes
-            } else {
-                std::string dispatch_result = Cachelet::dispatch(cache, parse_result.command);
-                // try to send the response to the client
-                if(!send_all(client_sock, dispatch_result)){
-                    return;
-                }
-                // move the buffer forward after parsing this command's bytes
-                buffer = buffer.substr(parse_result.bytes_consumed);
+    while(!client.buffer.empty()){
+        // parse the bytes we just received in the buffer
+        resp::ParseResult parse_result = resp::parse(client.buffer);
+        if(parse_result.status == resp::Status::Error){
+            send_all(client_sock, resp::encode_error("ERR Protocol error: invalid bulk length"));
+            return false;
+        } else if(parse_result.status == resp::Status::Incomplete){
+            break; // need to receive more bytes
+        } else {
+            std::string dispatch_result = Cachelet::dispatch(cache, parse_result.command);
+            // try to send the response to the client
+            if(!send_all(client_sock, dispatch_result)){
+                return false;
             }
+            // move the buffer forward after parsing this command's bytes
+            client.buffer = client.buffer.substr(parse_result.bytes_consumed);
         }
     }
+    return true;
+
 }
 
 } // namespace
@@ -108,22 +119,72 @@ int main(){
 
     std::cout << "Server listening on port " << PORT << std::endl;
 
+    std::vector<pollfd> pfds;
+    pfds.push_back({sock, POLLIN, 0});
+    std::unordered_map<int, Client> fd_to_client;
+
     while(true){
-        int client_sock = accept(sock, nullptr, nullptr);
-        if(client_sock < 0){
-            perror("accept");
-            continue;
+        if(poll(pfds.data(), pfds.size(), -1) == -1){
+            perror("poll");
+            break;
         }
-
-        std::cout << "Client connected!" << std::endl;
-
-
-        serve_client(client_sock, cache);
-
-        close(client_sock);
+        std::vector<pollfd> to_add;
+        std::vector<int> to_remove; // avoid concurrent mutation
+        for(int i = 0; i < pfds.size(); i++){
+            if(pfds[i].revents & POLLIN){
+                if(pfds[i].fd == sock){
+                    // listener is ready
+                    int client_sock = accept(sock, nullptr, nullptr); // don't care about the client ip info or port
+                    if(client_sock < 0){
+                        perror("accept");
+                        continue;
+                    }
+                    to_add.push_back({client_sock, POLLIN, 0});
+                    fd_to_client[client_sock] = {};
+                } else {
+                    // client is ready
+                    if(!serve_client(pfds[i].fd, fd_to_client[pfds[i].fd], cache)){
+                        // false return = connection closed, remove the fd
+                        to_remove.push_back(pfds[i].fd);
+                    }
+                }
+            }
+        }
+        pfds.insert(pfds.end(), to_add.begin(), to_add.end());
+        std::erase_if(pfds, [&to_remove](const pollfd &x){
+            return (std::find(to_remove.begin(), to_remove.end(), x.fd) != to_remove.end());
+        });
+        for(int i = 0; i < to_remove.size(); i++){
+            close(to_remove[i]);
+            fd_to_client.erase(to_remove[i]);
+        }
     }
-    // Unreachable in theory because the only way to terminate the server, currently, is to ctrl c interrupt. 
-    close(sock);
-    return 0;
+
+    // while(true){
+    //     int client_sock = accept(sock, nullptr, nullptr);
+    //     if(client_sock < 0){
+    //         perror("accept");
+    //         continue;
+    //     }
+
+    //     std::cout << "Client connected!" << std::endl;
+
+
+    //     pollfd first_connection = {
+    //         .fd = client_sock,
+    //         .events = POLLIN | POLLOUT,
+    //         .revents = 0
+    //     };
+    //     pfds.push_back(first_connection);
+    //     clients.push_back({});
+
+
+    //     serve_client(client_sock, cache);
+
+    //     close(client_sock);
+    // }
+    // // Unreachable in theory because the only way to terminate the server, currently, is to ctrl c interrupt. 
+    // close(sock);
+    // return 0;
 
 }
