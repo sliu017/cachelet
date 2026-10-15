@@ -22,7 +22,8 @@
 using namespace Cachelet;
 
 struct Client {
-    std::string buffer;
+    std::string input_buffer;
+    std::string output_buffer;
 };
 
 namespace {
@@ -47,13 +48,40 @@ bool send_all(int client_sock, std::string dispatch_result){
     return true;
 }
 
+// when we aren't guaranteed to be able to send all the bytes (could have a partial send)
+// returns the number of bytes LEFT, except for -1, which indicates a send failure
+ssize_t try_send(int client_sock, Client &client){
+    ssize_t original_byte_count = client.output_buffer.size();
+    while(!client.output_buffer.empty()){
+        ssize_t bytes_sent = send(client_sock, client.output_buffer.data(), client.output_buffer.size(), MSG_NOSIGNAL);
+        if(bytes_sent > 0){
+            original_byte_count -= bytes_sent;
+            client.output_buffer.erase(0, bytes_sent);
+            continue;
+        } else if(bytes_sent == -1){
+            if(errno == EAGAIN || errno == EWOULDBLOCK){
+            // kernel full, can't send any more. wait for POLLOUT signal
+                return original_byte_count;
+            } else {
+                perror("send");
+                return -1;
+            }
+        } else {
+            // in theory only reachable when 0 bytes sent? but should never be the case
+            // (alr checked for empty buffer, and full buffer -> EAGAIN, so no scenario where this could happen)
+            return original_byte_count;
+        }
+    }
+    return 0;
+}
+
 bool serve_client(int client_sock, Client &client, Cache &cache){ // returns true if the connection is still open
-    char buf[1024];
+    char buf[1024]; // TODO try changing size for perf.
     ssize_t bytes_received = 0;
 
-    bytes_received = recv(client_sock, buf, sizeof(buf), 0);
+    bytes_received = recv(client_sock, buf, sizeof(buf), 0); // receive 1024 bytes at once
     if(bytes_received > 0){
-        client.buffer.append(buf, bytes_received);
+        client.input_buffer.append(buf, bytes_received);
     } else if(bytes_received == 0){
         return false; // connection closed
     } else {
@@ -65,9 +93,9 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
         return false;
     }
 
-    while(!client.buffer.empty()){
+    while(!client.input_buffer.empty()){
         // parse the bytes we just received in the buffer
-        resp::ParseResult parse_result = resp::parse(client.buffer);
+        resp::ParseResult parse_result = resp::parse(client.input_buffer);
         if(parse_result.status == resp::Status::Error){
             send_all(client_sock, resp::encode_error("ERR Protocol error: invalid bulk length"));
             return false;
@@ -80,7 +108,7 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
                 return false;
             }
             // move the buffer forward after parsing this command's bytes
-            client.buffer = client.buffer.substr(parse_result.bytes_consumed);
+            client.input_buffer = client.input_buffer.substr(parse_result.bytes_consumed);
         }
     }
     return true;
