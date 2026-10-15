@@ -28,25 +28,7 @@ struct Client {
 
 namespace {
 
-    
 
-
-// need a safe way to send() in case it doesn't receive all bytes requested to be sent
-// therefore, whenever we send anything to the client, we must use this method
-bool send_all(int client_sock, std::string dispatch_result){
-    while(!dispatch_result.empty()){
-        ssize_t send_result = send(client_sock, dispatch_result.data(), dispatch_result.size(), MSG_NOSIGNAL);
-        if(send_result == -1){
-            perror("send");
-            return false;
-        } else if(send_result < dispatch_result.size()){
-            dispatch_result = dispatch_result.substr(send_result);
-        } else {
-            break;
-        }
-    }
-    return true;
-}
 
 // when we aren't guaranteed to be able to send all the bytes (could have a partial send)
 // returns the number of bytes LEFT, except for -1, which indicates a send failure
@@ -75,6 +57,24 @@ ssize_t try_send(int client_sock, Client &client){
     return 0;
 }
 
+// whenever we try to send bytes to the client, pass through this logic
+// it attempts to send bytes and responds according to the result, including setting the POLLOUT flag
+bool handle_send(pollfd &pfd, Client &client){
+    int client_sock = pfd.fd;
+    ssize_t bytes_left = try_send(client_sock, client); // note try_send returns bytes remaining
+    if(bytes_left == -1){ // failure to send bytes
+        return false;
+    } else if(bytes_left > 0){
+        pfd.events |= POLLOUT;
+    } else { // all bytes sent! e.g. no bytes remaining
+        // remove POLLOUT flag since we don't have "pending" sends anymore
+        if((pfd.events & POLLOUT) == POLLOUT){
+            pfd.events ^= POLLOUT;
+        }
+    }
+    return true;
+}
+
 bool serve_client(int client_sock, Client &client, Cache &cache){ // returns true if the connection is still open
     char buf[1024]; // TODO try changing size for perf.
     ssize_t bytes_received = 0;
@@ -94,23 +94,24 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
     }
 
     while(!client.input_buffer.empty()){
-        // parse the bytes we just received in the buffer
-        resp::ParseResult parse_result = resp::parse(client.input_buffer);
+    // parse the bytes we just received in the buffer
+    resp::ParseResult parse_result = resp::parse(client.input_buffer);
         if(parse_result.status == resp::Status::Error){
-            send_all(client_sock, resp::encode_error("ERR Protocol error: invalid bulk length"));
+            client.output_buffer.append(resp::encode_error("ERR Protocol error: invalid bulk length"));
+            try_send(client_sock, client);
             return false;
         } else if(parse_result.status == resp::Status::Incomplete){
             break; // need to receive more bytes
         } else {
             std::string dispatch_result = Cachelet::dispatch(cache, parse_result.command);
-            // try to send the response to the client
-            if(!send_all(client_sock, dispatch_result)){
-                return false;
-            }
-            // move the buffer forward after parsing this command's bytes
-            client.input_buffer = client.input_buffer.substr(parse_result.bytes_consumed);
+            // add to this client's "pending" output
+            client.output_buffer.append(dispatch_result);
+            client.input_buffer.erase(0, parse_result.bytes_consumed);
+
+            // let main handle sending the bytes because we might need to edit a pfd flag depending on the result
         }
     }
+
     return true;
 
 }
@@ -160,7 +161,7 @@ int main(){
         return 1;
     }
 
-    if(listen(sock, 10) == -1){
+    if(listen(sock, SOMAXCONN) == -1){
         perror("listen");
         close(sock);
         return 1;
@@ -187,23 +188,39 @@ int main(){
             if(pfds[i].revents & POLLIN){
                 if(pfds[i].fd == sock){
                     // listener is ready, i.e. new client available
-                    int client_sock = accept(sock, nullptr, nullptr); // don't care about the client ip info or port
-                    if(client_sock < 0){
+                    int new_client_sock = accept(sock, nullptr, nullptr); // don't care about the client ip info or port
+                    if(new_client_sock < 0){
                         perror("accept");
                         continue;
                     }
-                    if(!set_nonblocking(client_sock)){
-                        close(client_sock);
+                    if(!set_nonblocking(new_client_sock)){
+                        close(new_client_sock);
                         continue;
                     }
-                    to_add.push_back({client_sock, POLLIN, 0});
-                    fd_to_client[client_sock] = {};
+                    to_add.push_back({new_client_sock, POLLIN, 0});
+                    fd_to_client[new_client_sock] = {};
                 } else {
                     // client is ready
-                    if(!serve_client(pfds[i].fd, fd_to_client[pfds[i].fd], cache)){
+                    int client_sock = pfds[i].fd;
+                    Client &client = fd_to_client[pfds[i].fd];
+
+                    if(!serve_client(client_sock, client, cache)){
                         // false return = connection closed, remove the fd
                         to_remove.push_back(pfds[i].fd);
+                        continue;
                     }
+                    
+                    if(!handle_send(pfds[i], client)){
+                        to_remove.push_back(pfds[i].fd);
+                        continue;
+                    }
+
+                }
+            }
+            if(pfds[i].revents & POLLOUT){
+                if(!handle_send(pfds[i], fd_to_client[pfds[i].fd])){
+                    to_remove.push_back(pfds[i].fd);
+                    continue;
                 }
             }
         }
@@ -216,32 +233,5 @@ int main(){
             fd_to_client.erase(to_remove[i]);
         }
     }
-
-    // while(true){
-    //     int client_sock = accept(sock, nullptr, nullptr);
-    //     if(client_sock < 0){
-    //         perror("accept");
-    //         continue;
-    //     }
-
-    //     std::cout << "Client connected!" << std::endl;
-
-
-    //     pollfd first_connection = {
-    //         .fd = client_sock,
-    //         .events = POLLIN | POLLOUT,
-    //         .revents = 0
-    //     };
-    //     pfds.push_back(first_connection);
-    //     clients.push_back({});
-
-
-    //     serve_client(client_sock, cache);
-
-    //     close(client_sock);
-    // }
-    // // Unreachable in theory because the only way to terminate the server, currently, is to ctrl c interrupt. 
-    // close(sock);
-    // return 0;
 
 }
