@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <cstdio>
 #include <cerrno>
@@ -33,7 +34,7 @@ namespace {
 // therefore, whenever we send anything to the client, we must use this method
 bool send_all(int client_sock, std::string dispatch_result){
     while(!dispatch_result.empty()){
-        ssize_t send_result = send(client_sock, dispatch_result.data(), dispatch_result.size(), 0);
+        ssize_t send_result = send(client_sock, dispatch_result.data(), dispatch_result.size(), MSG_NOSIGNAL);
         if(send_result == -1){
             perror("send");
             return false;
@@ -56,6 +57,10 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
     } else if(bytes_received == 0){
         return false; // connection closed
     } else {
+        if(errno == EAGAIN){
+            // connection isn't faulty in any way, we just can't receive the bytes currently.
+            return true;
+        }
         perror("recv");
         return false;
     }
@@ -80,6 +85,22 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
     }
     return true;
 
+}
+
+bool set_nonblocking(int fd){
+    int flags = fcntl(fd, F_GETFL, 0);
+    if(flags == -1){
+        perror("getfl");
+        return false;
+    }
+    flags |= O_NONBLOCK; // preserve other potentially critical flags
+
+    if(fcntl(fd, F_SETFL, flags) == -1){
+        perror("setfl");
+        return false;
+    } else {
+        return true;
+    }
 }
 
 } // namespace
@@ -116,6 +137,10 @@ int main(){
         close(sock);
         return 1;
     }
+    if(!set_nonblocking(sock)){
+        close(sock);
+        return 1;
+    }
 
     std::cout << "Server listening on port " << PORT << std::endl;
 
@@ -124,7 +149,7 @@ int main(){
     std::unordered_map<int, Client> fd_to_client;
 
     while(true){
-        if(poll(pfds.data(), pfds.size(), -1) == -1){
+        if(poll(pfds.data(), pfds.size(), -1) == -1){ // don't periodically check, only act when alerted to requests from client
             perror("poll");
             break;
         }
@@ -133,10 +158,14 @@ int main(){
         for(int i = 0; i < pfds.size(); i++){
             if(pfds[i].revents & POLLIN){
                 if(pfds[i].fd == sock){
-                    // listener is ready
+                    // listener is ready, i.e. new client available
                     int client_sock = accept(sock, nullptr, nullptr); // don't care about the client ip info or port
                     if(client_sock < 0){
                         perror("accept");
+                        continue;
+                    }
+                    if(!set_nonblocking(client_sock)){
+                        close(client_sock);
                         continue;
                     }
                     to_add.push_back({client_sock, POLLIN, 0});

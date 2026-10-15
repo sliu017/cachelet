@@ -8,6 +8,9 @@ add_library(cachelet
 )
 add_executable(cache_test)
 add_executable(cachelet-server server/main.cpp)
+# target_compile_options(cachelet PRIVATE -Wall -Wextra)
+# target_compile_options(cachelet-server PRIVATE -Wall -Wextra)
+# target_compile_options(cache_test PRIVATE -Wall -Wextra)
 target_sources(cache_test
     PUBLIC
         tests/cache_test.cpp
