@@ -184,7 +184,7 @@ int main(){
         }
         std::vector<pollfd> to_add;
         std::vector<int> to_remove; // avoid concurrent mutation
-        for(int i = 0; i < pfds.size(); i++){
+        for(size_t i = 0; i < pfds.size(); i++){
             if(pfds[i].revents & POLLIN){
                 if(pfds[i].fd == sock){
                     // listener is ready, i.e. new client available
@@ -228,7 +228,7 @@ int main(){
         std::erase_if(pfds, [&to_remove](const pollfd &x){
             return (std::find(to_remove.begin(), to_remove.end(), x.fd) != to_remove.end());
         });
-        for(int i = 0; i < to_remove.size(); i++){
+        for(size_t i = 0; i < to_remove.size(); i++){
             close(to_remove[i]);
             fd_to_client.erase(to_remove[i]);
         }

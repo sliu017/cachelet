@@ -33,7 +33,7 @@ Cachelet::resp::ParseResult parse(const std::string &input){
         return response; // need to break early
     }
     std::string token_count_string;
-    int current_index = 1;
+    size_t current_index = 1;
     
     while(current_index < input.size() && input[current_index] != '\r'){
         token_count_string += input[current_index++];
