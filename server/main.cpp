@@ -76,21 +76,25 @@ bool handle_send(pollfd &pfd, Client &client){
 }
 
 bool serve_client(int client_sock, Client &client, Cache &cache){ // returns true if the connection is still open
-    char buf[1024]; // TODO try changing size for perf.
+    char buf[16384]; // TODO try changing size (now at 16384) for perf - shouldn't need to change as much now
     ssize_t bytes_received = 0;
 
-    bytes_received = recv(client_sock, buf, sizeof(buf), 0); // receive 1024 bytes at once
-    if(bytes_received > 0){
-        client.input_buffer.append(buf, bytes_received);
-    } else if(bytes_received == 0){
-        return false; // connection closed
-    } else {
-        if(errno == EAGAIN){
-            // connection isn't faulty in any way, we just can't receive the bytes currently.
-            return true;
+    bool connection_should_remain_open = true;
+    while(true){
+        bytes_received = recv(client_sock, buf, sizeof(buf), 0); // receive BUFFER_SIZE bytes at once
+        if(bytes_received > 0){
+            client.input_buffer.append(buf, bytes_received);
+        } else if(bytes_received == 0){
+            connection_should_remain_open = false; // 0 bytes received, connection should be closed
+            break;
+        } else {
+            if(errno == EAGAIN){
+                // connection isn't faulty in any way, we just can't receive the bytes currently.
+                break;
+            }
+            perror("recv");
+            return false; // need to exit without processing any of the commands already sent
         }
-        perror("recv");
-        return false;
     }
 
     while(!client.input_buffer.empty()){
@@ -112,7 +116,10 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
         }
     }
 
-    return true;
+    if(!connection_should_remain_open){
+        try_send(client_sock, client);
+    }
+    return connection_should_remain_open;
 
 }
 
