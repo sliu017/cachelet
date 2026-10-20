@@ -18,6 +18,7 @@
 #include <algorithm>
 
 #include "poll.h"
+#include <sys/epoll.h>
 
 using namespace Cachelet;
 
@@ -42,7 +43,7 @@ ssize_t try_send(int client_sock, Client &client){
             continue;
         } else if(bytes_sent == -1){
             if(errno == EAGAIN || errno == EWOULDBLOCK){
-            // kernel full, can't send any more. wait for POLLOUT signal
+            // kernel full, can't send any more. wait for EPOLLOUT signal
                 return original_byte_count;
             } else {
                 perror("send");
@@ -58,18 +59,27 @@ ssize_t try_send(int client_sock, Client &client){
 }
 
 // whenever we try to send bytes to the client, pass through this logic
-// it attempts to send bytes and responds according to the result, including setting the POLLOUT flag
-bool handle_send(pollfd &pfd, Client &client){
-    int client_sock = pfd.fd;
+// it attempts to send bytes and responds according to the result, including setting the EPOLLOUT flag
+bool handle_send(int epfd, int client_sock, Client &client){
     ssize_t bytes_left = try_send(client_sock, client); // note try_send returns bytes remaining
+    epoll_event ev{};
+    ev.events = EPOLLIN; // we may or may not mark EPOLLOUT depending on if we have pending output
+    ev.data.fd = client_sock;
+    
     if(bytes_left == -1){ // failure to send bytes
         return false;
     } else if(bytes_left > 0){
-        pfd.events |= POLLOUT;
+        ev.events |= EPOLLOUT;
+        if(epoll_ctl(epfd, EPOLL_CTL_MOD, client_sock, &ev) == -1){
+            perror("epoll_ctl");
+            return false;
+        }
     } else { // all bytes sent! e.g. no bytes remaining
-        // remove POLLOUT flag since we don't have "pending" sends anymore
-        if((pfd.events & POLLOUT) == POLLOUT){
-            pfd.events ^= POLLOUT;
+        // remove EPOLLOUT flag since we don't have "pending" sends anymore
+        if(epoll_ctl(epfd, EPOLL_CTL_MOD, client_sock, &ev) // set only EPOLLIN (removing EPOLLOUT in the process)
+        == -1){
+            perror("epoll_ctl");
+            return false;
         }
     }
     return true;
@@ -139,6 +149,11 @@ bool set_nonblocking(int fd){
     }
 }
 
+void remove_client(int fd, std::unordered_map<int, Client> &fd_to_client){
+    close(fd);
+    fd_to_client.erase(fd);
+}
+
 } // namespace
 
 int main(){
@@ -180,65 +195,73 @@ int main(){
 
     std::cout << "Server listening on port " << PORT << std::endl;
 
-    std::vector<pollfd> pfds;
-    pfds.push_back({sock, POLLIN, 0});
+    epoll_event ev{};
+    int epollfd = epoll_create1(0);
+    if(epollfd == -1){
+        perror("epoll_create1");
+        return 1;
+    }
+    ev.events = EPOLLIN;
+    ev.data.fd = sock;
+    epoll_ctl(epollfd, EPOLL_CTL_ADD, sock, &ev);
+
+    // std::vector<pollfd> pfds;
+    // pfds.push_back({sock, POLLIN, 0});
     std::unordered_map<int, Client> fd_to_client;
+    std::vector<epoll_event> events(64); // scratch vector for the kernel to write to, it receives information about ready file descriptors
 
     while(true){
-        if(poll(pfds.data(), pfds.size(), -1) == -1){ // don't periodically check, only act when alerted to requests from client
-            perror("poll");
-            break;
+        int event_count = (epoll_wait(epollfd, events.data(), events.size(), -1));
+        if(event_count == -1){
+            perror("epoll_wait");
+            return 1;
         }
-        std::vector<pollfd> to_add;
-        std::vector<int> to_remove; // avoid concurrent mutation
-        for(size_t i = 0; i < pfds.size(); i++){
-            if(pfds[i].revents & POLLIN){
-                if(pfds[i].fd == sock){
-                    // listener is ready, i.e. new client available
-                    int new_client_sock = accept(sock, nullptr, nullptr); // don't care about the client ip info or port
-                    if(new_client_sock < 0){
-                        perror("accept");
-                        continue;
-                    }
-                    if(!set_nonblocking(new_client_sock)){
-                        close(new_client_sock);
-                        continue;
-                    }
-                    to_add.push_back({new_client_sock, POLLIN, 0});
-                    fd_to_client[new_client_sock] = {};
-                } else {
-                    // client is ready
-                    int client_sock = pfds[i].fd;
-                    Client &client = fd_to_client[pfds[i].fd];
 
-                    if(!serve_client(client_sock, client, cache)){
-                        // false return = connection closed, remove the fd
-                        to_remove.push_back(pfds[i].fd);
-                        continue;
-                    }
-                    
-                    if(!handle_send(pfds[i], client)){
-                        to_remove.push_back(pfds[i].fd);
-                        continue;
-                    }
-
-                }
-            }
-            if(pfds[i].revents & POLLOUT){
-                if(!handle_send(pfds[i], fd_to_client[pfds[i].fd])){
-                    to_remove.push_back(pfds[i].fd);
+        for(int i = 0; i < event_count; i++){
+            int fd = events[i].data.fd;
+            uint32_t flags = events[i].events;
+            
+            if(fd == sock){ // listener ready
+                int new_client_sock = accept(sock, nullptr, nullptr); // don't care about the client ip info or port
+                if(new_client_sock < 0){
+                    perror("accept");
                     continue;
                 }
+                if(!set_nonblocking(new_client_sock)){
+                    close(new_client_sock);
+                    continue;
+                }
+
+                epoll_event client_ev{};
+                client_ev.events = EPOLLIN;
+                client_ev.data.fd = new_client_sock;
+                epoll_ctl(epollfd, EPOLL_CTL_ADD, new_client_sock, &client_ev);
+                fd_to_client[new_client_sock] = {};
+            } else {
+                // client ready
+                Client &client = fd_to_client[fd];
+
+                if(!serve_client(fd, client, cache)){
+                    // false return = connection closed, remove the fd
+                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
+                    remove_client(fd, fd_to_client);
+                    continue;
+                }
+                
+                if(!handle_send(epollfd, fd, client)){
+                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
+                    remove_client(fd, fd_to_client);
+                    continue;
+                }
+
+            }
+            if(flags & EPOLLOUT){
+                if(!handle_send(epollfd, fd, fd_to_client[fd])){
+                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
+                    remove_client(fd, fd_to_client);
+                    continue;
+                }                
             }
         }
-        pfds.insert(pfds.end(), to_add.begin(), to_add.end());
-        std::erase_if(pfds, [&to_remove](const pollfd &x){
-            return (std::find(to_remove.begin(), to_remove.end(), x.fd) != to_remove.end());
-        });
-        for(size_t i = 0; i < to_remove.size(); i++){
-            close(to_remove[i]);
-            fd_to_client.erase(to_remove[i]);
-        }
     }
-
 }
