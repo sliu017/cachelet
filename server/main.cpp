@@ -241,17 +241,22 @@ int main(){
                 // client ready
                 Client &client = fd_to_client[fd];
 
-                if(!serve_client(fd, client, cache)){
-                    // false return = connection closed, remove the fd
-                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
-                    remove_client(fd, fd_to_client);
-                    continue;
-                }
-                
-                if(!handle_send(epollfd, fd, client)){
-                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
-                    remove_client(fd, fd_to_client);
-                    continue;
+                // only read if there might be readable information from the socket
+                // this includes EPOLLHUP -> a connection hung up, and we handle the logic for that case within this block
+                // also includes EPOLLERR -> error handling is also done within this block
+                if(flags & (EPOLLIN | EPOLLHUP | EPOLLERR)){
+                    if(!serve_client(fd, client, cache)){
+                        // false return = connection closed, remove the fd
+                        epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
+                        remove_client(fd, fd_to_client);
+                        continue;
+                    }
+                    
+                    if(!handle_send(epollfd, fd, client)){
+                        epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
+                        remove_client(fd, fd_to_client);
+                        continue;
+                    }
                 }
 
             }

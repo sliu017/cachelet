@@ -2,3 +2,4 @@
 /.vscode
 asan.txt
 benchmarks.txt
+/benchmarks/results.csv
