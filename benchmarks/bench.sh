@@ -53,6 +53,9 @@ if ! redis-cli -p "$PORT" ping >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "  warm-up run (not recorded)" >&2
+redis-benchmark -p "$PORT" -c 50 -n 10000 -t ping_mbulk,set,get -q >/dev/null 2>&1 || true
+
 # ensure results folder
 mkdir -p "$(dirname "$OUT")"
 # print status line

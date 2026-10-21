@@ -32,8 +32,21 @@ def main():
     df = pd.read_csv(args.csv, dtype={"label": str, "commit": str})
     if args.labels:
         df = df[df["label"].isin(args.labels)]
+
+    # Drop impossible measurements (e.g. negative throughput from a
+    # redis-benchmark timing glitch) so they can't skew the averages,
+    # and say which rows were dropped so they can be investigated.
+    bad = df[df["rps"] <= 0]
+    if not bad.empty:
+        print(f"warning: dropping {len(bad)} row(s) with non-positive rps:",
+              file=sys.stderr)
+        print(bad[["label", "commit", "benchmark", "run", "test", "rps"]]
+              .to_string(index=False), file=sys.stderr)
+        df = df[df["rps"] > 0]
+ 
     if df.empty:
         sys.exit("no matching results")
+
 
     metrics = [m for m in METRICS if m in df.columns]
 
