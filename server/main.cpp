@@ -17,7 +17,6 @@
 #include <unordered_map>
 #include <algorithm>
 
-#include "poll.h"
 #include <sys/epoll.h>
 
 using namespace Cachelet;
@@ -28,8 +27,6 @@ struct Client {
 };
 
 namespace {
-
-
 
 // when we aren't guaranteed to be able to send all the bytes (could have a partial send)
 // returns the number of bytes LEFT, except for -1, which indicates a send failure
@@ -121,8 +118,6 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
             // add to this client's "pending" output
             client.output_buffer.append(dispatch_result);
             client.input_buffer.erase(0, parse_result.bytes_consumed);
-
-            // let main handle sending the bytes because we might need to edit a pfd flag depending on the result
         }
     }
 
@@ -149,7 +144,8 @@ bool set_nonblocking(int fd){
     }
 }
 
-void remove_client(int fd, std::unordered_map<int, Client> &fd_to_client){
+void remove_client(int epollfd, int fd, std::unordered_map<int, Client> &fd_to_client){
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
     fd_to_client.erase(fd);
 }
@@ -203,10 +199,11 @@ int main(){
     }
     ev.events = EPOLLIN;
     ev.data.fd = sock;
-    epoll_ctl(epollfd, EPOLL_CTL_ADD, sock, &ev);
+    if(epoll_ctl(epollfd, EPOLL_CTL_ADD, sock, &ev) == -1){
+        perror("epoll_ctl_add");
+        return 1;
+    }
 
-    // std::vector<pollfd> pfds;
-    // pfds.push_back({sock, POLLIN, 0});
     std::unordered_map<int, Client> fd_to_client;
     std::vector<epoll_event> events(64); // scratch vector for the kernel to write to, it receives information about ready file descriptors
 
@@ -235,7 +232,11 @@ int main(){
                 epoll_event client_ev{};
                 client_ev.events = EPOLLIN;
                 client_ev.data.fd = new_client_sock;
-                epoll_ctl(epollfd, EPOLL_CTL_ADD, new_client_sock, &client_ev);
+                if(epoll_ctl(epollfd, EPOLL_CTL_ADD, new_client_sock, &client_ev) == -1){
+                    perror("epoll_ctl_add");
+                    close(new_client_sock);
+                    continue;
+                }
                 fd_to_client[new_client_sock] = {};
             } else {
                 // client ready
@@ -247,14 +248,12 @@ int main(){
                 if(flags & (EPOLLIN | EPOLLHUP | EPOLLERR)){
                     if(!serve_client(fd, client, cache)){
                         // false return = connection closed, remove the fd
-                        epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
-                        remove_client(fd, fd_to_client);
+                        remove_client(epollfd, fd, fd_to_client);
                         continue;
                     }
                     
                     if(!handle_send(epollfd, fd, client)){
-                        epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
-                        remove_client(fd, fd_to_client);
+                        remove_client(epollfd, fd, fd_to_client);
                         continue;
                     }
                 }
@@ -262,8 +261,7 @@ int main(){
             }
             if(flags & EPOLLOUT){
                 if(!handle_send(epollfd, fd, fd_to_client[fd])){
-                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &ev);
-                    remove_client(fd, fd_to_client);
+                    remove_client(epollfd, fd, fd_to_client);
                     continue;
                 }                
             }
