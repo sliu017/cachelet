@@ -12,6 +12,7 @@ set -euo pipefail # any failure terminates the script, unset vars = error (for s
 
 BIN=${1:?usage: ./bench.sh <server-binary> [label]} # set BIN to be the path of the server binary (required)
 LABEL=${2:-$(basename "$(dirname "$(dirname "$(realpath "$BIN")")")")} # runs from build/cachelet-server, step back twice for the label
+SERVER_ARGS=("${@:3}")   # all arguments from the 3rd onward, as an array
 PORT=6379
 RUNS=${RUNS:-3} # default to 3 runs
 OUT=${OUT:-benchmarks/results.csv}
@@ -38,7 +39,7 @@ COMMIT=$(git -C "$(dirname "$BIN")" rev-parse --short HEAD 2>/dev/null || echo u
 
 
 # start server in background, ALWAYS killed on exit, no matter reason
-"$BIN" >/dev/null 2>&1 &
+"$BIN" "${SERVER_ARGS[@]}" >/dev/null 2>&1 &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT # trap analogous to finally
 
