@@ -5,6 +5,7 @@ add_library(cachelet
     src/cache.cpp 
     src/resp.cpp 
     src/dispatch.cpp
+    src/aof.cpp
 )
 add_executable(cache_test)
 add_executable(cachelet-server server/main.cpp)

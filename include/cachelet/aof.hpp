@@ -1,9 +1,8 @@
 #pragma once
 
-#include <optional>
 #include <chrono>
 #include <string>
-
+#include <vector>
 
 namespace Cachelet {
     class AOF {
@@ -20,7 +19,7 @@ namespace Cachelet {
         AOF(const AOF&) = delete;
         AOF& operator=(const AOF&) = delete;
 
-        bool append_command(const std::vector<std::string> &command);
+        void append_command(const std::vector<std::string> &command);
         bool flush();
 
 
