@@ -19,15 +19,15 @@ Cachelet::Cache::Cache(std::size_t max_entries) : MAX_ENTRIES(max_entries){
 
 // Set without a TTL
 void Cachelet::Cache::set(std::string const &key, std::string const &value){
-    setHelper(key, value, std::nullopt);
+    set_helper(key, value, std::nullopt);
 }
 
 // Set with a TTL
 void Cachelet::Cache::set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl){
-    setHelper(key, value, ttl);
+    set_helper(key, value, ttl);
 }
 
-void Cachelet::Cache::setHelper(std::string const &key, std::string const &value, 
+void Cachelet::Cache::set_helper(std::string const &key, std::string const &value, 
     std::optional<std::chrono::steady_clock::duration> const &ttl){
     auto existing_it = key_to_entry_map.find(key);
     std::optional<std::chrono::steady_clock::time_point> new_expire_time = std::nullopt;

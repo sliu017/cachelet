@@ -21,7 +21,7 @@ namespace Cachelet {
         const size_t MAX_ENTRIES;
 
         // one source of truth for set functions such that we can toggle the (optional) ttl
-        void setHelper(std::string const &key, std::string const &value, 
+        void set_helper(std::string const &key, std::string const &value, 
             std::optional<std::chrono::steady_clock::duration> const &ttl);
 
         public:
