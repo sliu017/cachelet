@@ -7,9 +7,33 @@
 #include <iostream>
 #include <cerrno>
 #include <cstring>
+#include <cctype>
 #include <system_error>
 
 using namespace std::chrono_literals;
+
+
+namespace {
+    void to_lower_string(std::string &str){
+        for(char &c : str){
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); 
+        }
+    }
+}
+
+std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &policy_string){
+    std::string lower = policy_string;
+    to_lower_string(lower);
+    if(lower == "always"){
+        return Cachelet::AOF::Policy::always;
+    } else if(lower == "everysec"){
+        return Cachelet::AOF::Policy::everysec;
+    } else if(lower == "no"){
+        return Cachelet::AOF::Policy::no;
+    } else {
+        return std::nullopt;
+    }
+}
 
 // constructor, takes string path and policy
 // policy comes in as a cli arg. but conversion should happen where those args are read (catch malformed input there)

@@ -22,7 +22,6 @@ namespace Cachelet {
         void append_command(const std::vector<std::string> &command);
         bool flush();
 
-
         private:
         int fd; // file descriptor to write to
         Cachelet::AOF::Policy policy;
@@ -30,5 +29,6 @@ namespace Cachelet {
         std::string buffer; // holds commands appended during the current iteration
         bool needs_fsync;
     };
+    std::optional<AOF::Policy> parse_policy(const std::string &policy_string);
 
 }
