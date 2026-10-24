@@ -26,8 +26,9 @@ namespace Cachelet {
         private:
         int fd; // file descriptor to write to
         Cachelet::AOF::Policy policy;
-        std::chrono::steady_clock::time_point last_fsync; // note time elapsed since last fsync, CONSTRUCT TO NOW()
+        std::chrono::steady_clock::time_point last_fsync; // note time of the last fsync, CONSTRUCT TO NOW()
         std::string buffer; // holds commands appended during the current iteration
+        bool needs_fsync;
     };
 
 }
