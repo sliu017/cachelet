@@ -8,7 +8,7 @@
 // dispatch takes a commmand from a ParseResult and runs the commnand, then
 // returns the encoded reply bytes (e.g. using resp's encode suite)
 namespace Cachelet {
-    class AOF;
+    class AOF; // forward declaration, "AOF exists" without specifying contents, allows references
     
     // overload dispatch based on if we want persistence, e.g. new changes should be committed to the AOF
     std::string dispatch(Cachelet::Cache &cache, const std::vector<std::string> &command);

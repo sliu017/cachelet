@@ -5,6 +5,7 @@
 #include <vector>
 
 namespace Cachelet {
+    class Cache;
     class AOF {
         public:
         enum class Policy {no, everysec, always}; // plan to add more eventually
@@ -29,6 +30,8 @@ namespace Cachelet {
         std::string buffer; // holds commands appended during the current iteration
         bool needs_fsync;
     };
+    
+    void replay(const std::string &path, Cachelet::Cache &cache);
     std::optional<AOF::Policy> parse_policy(const std::string &policy_string);
 
 }

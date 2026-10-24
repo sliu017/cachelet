@@ -1,5 +1,7 @@
 #include "cachelet/aof.hpp"
 #include "cachelet/resp.hpp"
+#include "cachelet/cache.hpp"
+#include "cachelet/dispatch.hpp"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -9,6 +11,7 @@
 #include <cstring>
 #include <cctype>
 #include <system_error>
+#include <stdexcept>
 
 using namespace std::chrono_literals;
 
@@ -112,4 +115,71 @@ bool Cachelet::AOF::flush(){
     }
     
     return true;
+}
+
+// Reconstruct the cache using the AOF (which is essentially a log of state-changing commands)
+void Cachelet::replay(const std::string &path, Cachelet::Cache &cache){
+    int fd = open(path.data(), O_RDWR, 0644); // idk if O_CREAT is needed cause we don't want to create then read from an empty file
+    if(fd == -1){
+        if(errno == ENOENT){
+            // file doesnt exist which is expected on startup
+            return;
+        }
+        throw(std::system_error(errno, std::generic_category(), "failed to open AOF at " +path));
+    }
+    std::string contents;
+    char chunk[65536];
+    int replayed_command_count = 0;
+    // read command string from aof file
+    while(true){
+        ssize_t bytes_read = read(fd, chunk, sizeof(chunk));
+        if(bytes_read == 0){
+            break;
+        }
+        if(bytes_read == -1){
+            if(errno == EINTR){
+                continue;
+            }
+            int read_errno = errno; // close might overwrite errno
+            close(fd);
+            throw std::system_error(read_errno, 
+                std::generic_category(), "failed to read AOF at " + path);
+
+        }
+        contents.append(chunk, bytes_read); // without bytes_read argument, we might append extraneous chars in chunk
+    }
+    size_t original_size = contents.size();
+    size_t valid_bytes = 0; // we might have some invalid bytes in the file, so we should clean it up here
+    while(true){
+        if(contents.empty()){
+            break;
+        }
+        Cachelet::resp::ParseResult result = Cachelet::resp::parse(contents);
+        
+        if(result.status == Cachelet::resp::Status::Complete){
+            dispatch(cache, result.command);
+            replayed_command_count++;
+            valid_bytes += result.bytes_consumed;
+            contents.erase(0, result.bytes_consumed); // TODO time sink, optimize later
+            continue;
+        } else if(result.status == Cachelet::resp::Status::Incomplete){
+            // stop at the first incomplete command and remove it so it doesnt affect later commands
+            // (we can assume incomplete here means something crashed mid-write, so the client never got a reply)
+            // ^^ therefore dropping it entirely is safe/consistent
+            if(ftruncate(fd, valid_bytes) == -1){
+                int truncate_errno = errno; // close might overwrite errno
+                close(fd);
+                throw std::system_error(truncate_errno, std::generic_category(), "aof: failed to ftruncate to " +std::to_string(valid_bytes)
+                 +" bytes");
+            }
+            std::cerr << "AOF: Dropped incomplete command with " << (original_size - valid_bytes) << " bytes " << '\n';
+            break;
+        } else if(result.status == Cachelet::resp::Status::Error){
+            // theres something wrong here since all of contents should have been encoded by our own functions
+            close(fd);
+            throw std::runtime_error("AOF corrupt at byte offset " + std::to_string(valid_bytes) +", refusing to start");
+        }
+    }
+    close(fd);
+    std::cout << "Replayed " << replayed_command_count << " commands successfully\n";
 }
