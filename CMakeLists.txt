@@ -17,6 +17,7 @@ target_sources(cache_test
         tests/cache_test.cpp
         tests/resp_test.cpp
         tests/dispatch_test.cpp
+        tests/aof_test.cpp
 )
 
 target_compile_features(cachelet PUBLIC cxx_std_20)
