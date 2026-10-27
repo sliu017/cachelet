@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 
 #include <sys/epoll.h>
@@ -25,6 +26,7 @@ using namespace Cachelet;
 struct Client {
     std::string input_buffer;
     std::string output_buffer;
+    bool remove_after_send = false;
 };
 
 namespace {
@@ -41,7 +43,8 @@ void to_lower_string(std::string &str){
 ssize_t try_send(int client_sock, Client &client){
     ssize_t original_byte_count = client.output_buffer.size();
     while(!client.output_buffer.empty()){
-        ssize_t bytes_sent = send(client_sock, client.output_buffer.data(), client.output_buffer.size(), MSG_NOSIGNAL);
+        ssize_t bytes_sent = send(client_sock, client.output_buffer.data(), client.output_buffer.size(), 
+        MSG_NOSIGNAL); // Prevents program termination on writing to a closed socket, instead returns an error
         if(bytes_sent > 0){
             original_byte_count -= bytes_sent;
             client.output_buffer.erase(0, bytes_sent);
@@ -90,7 +93,7 @@ bool handle_send(int epfd, int client_sock, Client &client){
     return true;
 }
 
-bool serve_client(int client_sock, Client &client, Cache &cache){ // returns true if the connection is still open
+bool serve_client(int client_sock, Client &client, Cache &cache, std::optional<AOF> &aof){ // returns true if the connection is still open
     char buf[16384]; // TODO try changing size (now at 16384) for perf - shouldn't need to change as much now
     ssize_t bytes_received = 0;
 
@@ -100,7 +103,8 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
         if(bytes_received > 0){
             client.input_buffer.append(buf, bytes_received);
         } else if(bytes_received == 0){
-            connection_should_remain_open = false; // 0 bytes received, connection should be closed
+            // connection_should_remain_open = false; // 0 bytes received, connection should be closed
+            client.remove_after_send = true;
             break;
         } else {
             if(errno == EAGAIN){
@@ -122,16 +126,18 @@ bool serve_client(int client_sock, Client &client, Cache &cache){ // returns tru
         } else if(parse_result.status == resp::Status::Incomplete){
             break; // need to receive more bytes
         } else {
-            std::string dispatch_result = Cachelet::dispatch(cache, parse_result.command);
+            std::string dispatch_result = (aof == std::nullopt) ?
+            Cachelet::dispatch(cache, parse_result.command) :
+            Cachelet::dispatch(cache, *aof, parse_result.command);
             // add to this client's "pending" output
             client.output_buffer.append(dispatch_result);
             client.input_buffer.erase(0, parse_result.bytes_consumed);
         }
     }
 
-    if(!connection_should_remain_open){
-        try_send(client_sock, client);
-    }
+    // if(!connection_should_remain_open){
+    //     try_send(client_sock, client);
+    // }
     return connection_should_remain_open;
 
 }
@@ -152,10 +158,11 @@ bool set_nonblocking(int fd){
     }
 }
 
-void remove_client(int epollfd, int fd, std::unordered_map<int, Client> &fd_to_client){
+void remove_client(int epollfd, int fd, std::unordered_map<int, Client> &fd_to_client, std::unordered_set<int> &pending_fds){
     epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
     fd_to_client.erase(fd);
+    pending_fds.erase(fd);
 }
 
 } // namespace
@@ -232,6 +239,17 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
+    std::optional<Cachelet::AOF> aof_log;
+    if(aof){
+        try {
+            Cachelet::replay(aof_filename, cache);
+            aof_log.emplace(aof_filename, *aof_policy);
+        } catch(const std::runtime_error &e){
+            std::cerr << e.what() << "\n";
+            return 1;
+        }
+    }
+
     if(listen(sock, SOMAXCONN) == -1){
         perror("listen");
         close(sock);
@@ -259,9 +277,11 @@ int main(int argc, char* argv[]){
 
     std::unordered_map<int, Client> fd_to_client;
     std::vector<epoll_event> events(64); // scratch vector for the kernel to write to, it receives information about ready file descriptors
-
+    std::unordered_set<int> pending_fds; // clients that might have output, ensure we check after flushing to aof
+    // need the above set because we no longer immediately send output whenever can, as we must go through the flush step first, THEN output
     while(true){
-        int event_count = (epoll_wait(epollfd, events.data(), events.size(), -1));
+        int event_count = (epoll_wait(epollfd, events.data(), events.size(), 
+        100)); // change from -1 -> 100ms due to the "every second" aof policy, which requires us to periodically run flush() at least every 1s
         if(event_count == -1){
             perror("epoll_wait");
             return 1;
@@ -299,25 +319,39 @@ int main(int argc, char* argv[]){
                 // this includes EPOLLHUP -> a connection hung up, and we handle the logic for that case within this block
                 // also includes EPOLLERR -> error handling is also done within this block
                 if(flags & (EPOLLIN | EPOLLHUP | EPOLLERR)){
-                    if(!serve_client(fd, client, cache)){
+                    if(!serve_client(fd, client, cache, aof_log)){
                         // false return = connection closed, remove the fd
-                        remove_client(epollfd, fd, fd_to_client);
+                        remove_client(epollfd, fd, fd_to_client, pending_fds);
                         continue;
                     }
-                    
-                    if(!handle_send(epollfd, fd, client)){
-                        remove_client(epollfd, fd, fd_to_client);
-                        continue;
-                    }
+                    pending_fds.insert(fd);
                 }
 
             }
             if(flags & EPOLLOUT){
-                if(!handle_send(epollfd, fd, fd_to_client[fd])){
-                    remove_client(epollfd, fd, fd_to_client);
-                    continue;
-                }                
+                pending_fds.insert(fd);             
             }
         }
+        if(aof_log != std::nullopt){
+            if(!(aof_log->Cachelet::AOF::flush())){
+                std::cerr << "aof write failed\n";
+                return 1;
+            }
+        }
+        std::unordered_set<int> failed_fds;
+        for(int fd : pending_fds){
+            if(fd_to_client.find(fd) != fd_to_client.end()){
+                if(!handle_send(epollfd, fd, fd_to_client[fd])){
+                    failed_fds.insert(fd);
+                }
+                if(fd_to_client[fd].remove_after_send){
+                    failed_fds.insert(fd);
+                }
+            } 
+        }
+        for(int failed_fd : failed_fds){ // These are clients with active failures, so we must remove the connections entirely
+            remove_client(epollfd, failed_fd, fd_to_client, pending_fds);
+        }
+        pending_fds.clear(); // we've dealt with the possible outputs from each of the candidate fds, so clear until next iteration
     }
 }

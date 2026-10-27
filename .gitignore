@@ -1,5 +1,6 @@
 /build
 /build-release
+/cachelet.aof
 /.vscode
 asan.txt
 benchmarks.txt
