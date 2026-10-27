@@ -66,9 +66,9 @@ TEST(ReplayTest, CorruptedLog){
     std::string log = 
         "*3\r\n$3\r\nSET\r\n$4\r\nIraq\r\n$7\r\nBaghdad\r\n"   // SET Iraq Baghdad
         "*3\r\n$3\r\nSET\r\n$6\r\nBhutan\r\n$7\r\nThimphu\r\n"   // SET Bhutan Thimphu
-        "*3\r\n$5\r\nERROR\r\n$6\r\nBANANA\r\n" // Erroneous line, wrong token count + invalid commands
+        "*3\r\n$5\r\nERROR\r\n$6\r\nBANANA\r\n" // Erroneous line, wrong token count
         "*2\r\n$3\r\nDEL\r\n$4\r\nIraq\r\n";        
     auto path = write_temp_aof(log);
     Cachelet::Cache cache;
-    EXPECT_ANY_THROW(Cachelet::replay(path.string(), cache));
+    EXPECT_THROW(Cachelet::replay(path.string(), cache), std::runtime_error);
 }

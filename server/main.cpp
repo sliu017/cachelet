@@ -1,6 +1,7 @@
 #include "cachelet/cache.hpp"
 #include "cachelet/dispatch.hpp"
 #include "cachelet/resp.hpp"
+#include "cachelet/aof.hpp"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -27,6 +28,13 @@ struct Client {
 };
 
 namespace {
+    
+void to_lower_string(std::string &str){
+    for(char &c : str){
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); 
+    }
+}
+    
 
 // when we aren't guaranteed to be able to send all the bytes (could have a partial send)
 // returns the number of bytes LEFT, except for -1, which indicates a send failure
@@ -152,11 +160,56 @@ void remove_client(int epollfd, int fd, std::unordered_map<int, Client> &fd_to_c
 
 } // namespace
 
-int main(){
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    int PORT = 6379;
+int main(int argc, char* argv[]){
+    // parse aof flags, including whether the feature is enabled, the fsync policy, and the filename to write to
+    bool aof = false;
+    std::string aof_policy_string = "everysec";
+    std::optional<Cachelet::AOF::Policy> aof_policy = Cachelet::AOF::Policy::everysec;
+    std::string aof_filename = "cachelet.aof";
+    for(int i = 1; i < argc; i++){
+        std::string flag = argv[i];
+        if(flag == "--appendonly"){
+            if(i + 1 >= argc){
+                std::cerr << "--appendonly needs a value! (yes/no)\n";
+                return 1;
+            }
+            std::string flag_value = argv[++i];
+            to_lower_string(flag_value);
+            if(flag_value == "yes"){
+                aof = true;
+            } else if(flag_value == "no"){
+                aof = false; // we need this additional guard in case someone writes --appendonly yes --appendonly no (latter overrides)
+            } else {
+                std::cerr << "--appendonly must be either yes or no\n";
+                return 1;
+            }
+        } else if(flag == "--appendfsync"){
+            if(i + 1 >= argc){
+                std::cerr << "--appendfsync needs a value! (always/everysec/no)\n"; // TODO if ever add more policies, upd here
+                return 1;
+            }
+            aof_policy_string = argv[++i];
+            aof_policy = Cachelet::parse_policy(aof_policy_string);
+            if(aof_policy == std::nullopt){
+                std::cerr << "--appendfsync invalid value, should be always/everysec/no\n";
+                return 1;
+            }
+        } else if(flag == "--appendfilename"){
+            if(i + 1 >= argc){
+                std::cerr << "--appendfilename needs a value!\n";
+                return 1;
+            }
+            aof_filename = argv[++i];
+        } else {
+            std::cerr << "flag not recognized!\n";
+            return 1;
+        }
+    }
+
     Cache cache; // TODO No way to input max items
 
+    int PORT = 6379;
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock == -1){
         perror("socket");
         return 1;
