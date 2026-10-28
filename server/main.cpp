@@ -176,6 +176,7 @@ int main(int argc, char* argv[]){
     std::string aof_policy_string = "everysec";
     std::optional<Cachelet::AOF::Policy> aof_policy = Cachelet::AOF::Policy::everysec;
     std::string aof_filename = "cachelet.aof";
+    int port = 6379; // default port, we will accept a flag too
     for(int i = 1; i < argc; i++){
         std::string flag = argv[i];
         if(flag == "--appendonly"){
@@ -210,6 +211,31 @@ int main(int argc, char* argv[]){
                 return 1;
             }
             aof_filename = argv[++i];
+        } else if(flag == "--port"){
+            if(i + 1 >= argc){
+                std::cerr << "--port needs a value!\n";
+                return 1;
+            }
+            std::string port_string = argv[++i];
+            try {
+                std::size_t parsed_count = 0;
+                port = std::stoi(port_string, &parsed_count);
+                if(parsed_count != port_string.size()){
+                    // there was some invalid input following the valid input
+                    std::cerr << "error reading --port value\n";
+                    return 1;
+                }
+                if(port <= 0 || port > 65535){
+                    std::cerr << "port should be an integer between 1 and 65535 inclusive\n";
+                    return 1;
+                }
+            } catch (const std::invalid_argument &e){ // not convertible into an int
+                std::cerr << "port should be an integer between 1 and 65535 inclusive\n";
+                return 1;
+            } catch (const std::out_of_range &e){ // doesnt fit into an int
+                std::cerr << "port should be an integer between 1 and 65535 inclusive\n";
+                return 1;
+            }
         } else {
             std::cerr << "flag not recognized!\n";
             return 1;
@@ -218,7 +244,6 @@ int main(int argc, char* argv[]){
 
     Cache cache; // TODO No way to input max items
 
-    int PORT = 6379;
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock == -1){
         perror("socket");
@@ -234,7 +259,7 @@ int main(int argc, char* argv[]){
     struct sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_port = htons(port);
 
     if(bind(sock, (struct sockaddr*)&address, sizeof(address)) == -1){
         perror("bind");
@@ -263,7 +288,7 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
-    std::cout << "Server listening on port " << PORT << std::endl;
+    std::cout << "Server listening on port " << port << std::endl;
 
     epoll_event ev{};
     int epollfd = epoll_create1(0);
