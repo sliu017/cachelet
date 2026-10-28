@@ -71,7 +71,8 @@ ssize_t try_send(int client_sock, Client &client){
 bool handle_send(int epfd, int client_sock, Client &client){
     ssize_t bytes_left = try_send(client_sock, client); // note try_send returns bytes remaining
     epoll_event ev{};
-    ev.events = EPOLLIN; // we may or may not mark EPOLLOUT depending on if we have pending output
+    ev.events = (client.remove_after_send ? 0 : EPOLLIN); // we may or may not mark EPOLLOUT depending on if we have pending output
+    // note that for clients we want to close asap (indicated by the flag) we shouldn't waste CPU on trying to read input that will just return early
     ev.data.fd = client_sock;
     
     if(bytes_left == -1){ // failure to send bytes
@@ -84,8 +85,7 @@ bool handle_send(int epfd, int client_sock, Client &client){
         }
     } else { // all bytes sent! e.g. no bytes remaining
         // remove EPOLLOUT flag since we don't have "pending" sends anymore
-        if(epoll_ctl(epfd, EPOLL_CTL_MOD, client_sock, &ev) // set only EPOLLIN (removing EPOLLOUT in the process)
-        == -1){
+        if(epoll_ctl(epfd, EPOLL_CTL_MOD, client_sock, &ev) == -1){
             perror("epoll_ctl");
             return false;
         }
@@ -93,17 +93,22 @@ bool handle_send(int epfd, int client_sock, Client &client){
     return true;
 }
 
-bool serve_client(int client_sock, Client &client, Cache &cache, std::optional<AOF> &aof){ // returns true if the connection is still open
+// Returns false if we encounter a fatal error, incomplete sends are now fine
+// Note that false return immediately leads to the client being removed, so if there's any pending output, we should return true
+bool serve_client(int client_sock, Client &client, Cache &cache, std::optional<AOF> &aof){
+    if(client.remove_after_send){ // generally indicates a connection that should be closed as soon as we can send its output
+        client.input_buffer.clear();
+        return true;
+    }
     char buf[16384]; // TODO try changing size (now at 16384) for perf - shouldn't need to change as much now
     ssize_t bytes_received = 0;
 
-    bool connection_should_remain_open = true;
     while(true){
         bytes_received = recv(client_sock, buf, sizeof(buf), 0); // receive BUFFER_SIZE bytes at once
         if(bytes_received > 0){
             client.input_buffer.append(buf, bytes_received);
         } else if(bytes_received == 0){
-            // connection_should_remain_open = false; // 0 bytes received, connection should be closed
+            // 0 bytes received so connection should be closed after the output bytes are sent out
             client.remove_after_send = true;
             break;
         } else {
@@ -117,12 +122,13 @@ bool serve_client(int client_sock, Client &client, Cache &cache, std::optional<A
     }
 
     while(!client.input_buffer.empty()){
-    // parse the bytes we just received in the buffer
-    resp::ParseResult parse_result = resp::parse(client.input_buffer);
+        // parse the bytes we just received in the buffer
+        resp::ParseResult parse_result = resp::parse(client.input_buffer);
         if(parse_result.status == resp::Status::Error){
             client.output_buffer.append(resp::encode_error("ERR Protocol error: invalid bulk length"));
-            try_send(client_sock, client);
-            return false;
+            client.remove_after_send = true;
+            client.input_buffer.clear();
+            return true;
         } else if(parse_result.status == resp::Status::Incomplete){
             break; // need to receive more bytes
         } else {
@@ -135,10 +141,7 @@ bool serve_client(int client_sock, Client &client, Cache &cache, std::optional<A
         }
     }
 
-    // if(!connection_should_remain_open){
-    //     try_send(client_sock, client);
-    // }
-    return connection_should_remain_open;
+    return true;
 
 }
 
@@ -344,7 +347,8 @@ int main(int argc, char* argv[]){
                 if(!handle_send(epollfd, fd, fd_to_client[fd])){
                     failed_fds.insert(fd);
                 }
-                if(fd_to_client[fd].remove_after_send){
+                // if the conenction has no more input to offer us, AND we've sent everything we need to, it's safe to close
+                if(fd_to_client[fd].remove_after_send && fd_to_client[fd].output_buffer.empty()){
                     failed_fds.insert(fd);
                 }
             } 
