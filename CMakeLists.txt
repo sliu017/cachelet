@@ -14,10 +14,10 @@ target_compile_options(cachelet-server PRIVATE -Wall -Wextra)
 target_compile_options(cache_test PRIVATE -Wall -Wextra)
 target_sources(cache_test
     PUBLIC
-        tests/cache_test.cpp
-        tests/resp_test.cpp
-        tests/dispatch_test.cpp
-        tests/aof_test.cpp
+        tests/unit/cache_test.cpp
+        tests/unit/resp_test.cpp
+        tests/unit/dispatch_test.cpp
+        tests/unit/aof_test.cpp
 )
 
 target_compile_features(cachelet PUBLIC cxx_std_20)
