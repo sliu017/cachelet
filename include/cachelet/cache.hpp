@@ -21,14 +21,14 @@ namespace Cachelet {
         const size_t MAX_ENTRIES;
 
         // one source of truth for set functions such that we can toggle the (optional) ttl
-        void set_helper(std::string const &key, std::string const &value, 
+        std::optional<std::string> set_helper(std::string const &key, std::string const &value, 
             std::optional<std::chrono::steady_clock::duration> const &ttl);
 
         public:
         Cache(); // TODO: may want to consider removing this default constructor
         Cache(std::size_t max_entries); // constructor specifies the max number of entries it can hold
-        void set(std::string const &key, std::string const &value);
-        void set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl);
+        std::optional<std::string> set(std::string const &key, std::string const &value);
+        std::optional<std::string> set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl);
         std::optional<std::string> get(std::string const &key);
         bool del(std::string const &key);
         std::size_t size() const;

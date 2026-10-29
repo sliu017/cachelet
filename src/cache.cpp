@@ -7,6 +7,7 @@
 #include <optional>
 #include <unordered_map>
 #include <string>
+#include <stdexcept>
 
 // construct the defualt constructor with the system integer limit (e.g. max unsigned value for a 64 bit int on my machine)
 Cachelet::Cache::Cache() : MAX_ENTRIES(std::numeric_limits<std::size_t>::max()){
@@ -14,20 +15,24 @@ Cachelet::Cache::Cache() : MAX_ENTRIES(std::numeric_limits<std::size_t>::max()){
 }
 // need this funky way of constructing due to the const nature of MAX_ENTRIES
 Cachelet::Cache::Cache(std::size_t max_entries) : MAX_ENTRIES(max_entries){
-
+    if(this->MAX_ENTRIES <= 0){
+        throw std::invalid_argument("Cache capacity must be at least 1!");
+    }
 }
 
 // Set without a TTL
-void Cachelet::Cache::set(std::string const &key, std::string const &value){
-    set_helper(key, value, std::nullopt);
+std::optional<std::string> Cachelet::Cache::set(std::string const &key, std::string const &value){
+    return set_helper(key, value, std::nullopt);
 }
 
 // Set with a TTL
-void Cachelet::Cache::set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl){
-    set_helper(key, value, ttl);
+std::optional<std::string> Cachelet::Cache::set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl){
+    return set_helper(key, value, ttl);
 }
 
-void Cachelet::Cache::set_helper(std::string const &key, std::string const &value, 
+// return an optional string value, representing the string that was evicted
+// if no string was evicted, return nullopt
+std::optional<std::string> Cachelet::Cache::set_helper(std::string const &key, std::string const &value, 
     std::optional<std::chrono::steady_clock::duration> const &ttl){
     auto existing_it = key_to_entry_map.find(key);
     std::optional<std::chrono::steady_clock::time_point> new_expire_time = std::nullopt;
@@ -56,8 +61,10 @@ void Cachelet::Cache::set_helper(std::string const &key, std::string const &valu
             std::string key_to_erase = lru_cache.back().key;
             lru_cache.pop_back();
             key_to_entry_map.erase(key_to_erase);
+            return key_to_erase;
         }
     }
+    return std::nullopt;
     
 }
 

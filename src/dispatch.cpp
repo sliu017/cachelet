@@ -17,8 +17,24 @@ namespace {
     struct DispatchResult {
         std::string reply;
         bool modified; // on commands like SET, DEL etc that change cache state
-        std::optional<std::vector<std::string>> log_command; // for aof-specific commands
+        std::optional<std::vector<std::vector<std::string>>> log_command; // for aof-specific commands
     };
+
+    // required to correctly introduce eviction to persistence functionality
+    // performs a set command, if this set causes eviction of another key, add that eviction to the log in the form of DEL
+    void set_with_eviction(Cachelet::Cache &cache, DispatchResult &result, const std::string &key, const std::string &value,
+        std::optional<std::chrono::steady_clock::duration> const &ttl){
+        std::optional<std::string> evicted_key = std::nullopt;
+        if(ttl == std::nullopt){
+            evicted_key = cache.set(key, value);
+        } else {
+            evicted_key = cache.set(key, value, *ttl);
+        }
+        if(evicted_key != std::nullopt){
+            result.log_command.emplace();
+            result.log_command->push_back({"DEL", *evicted_key});
+        }
+    }
 
     DispatchResult dispatch_helper(Cachelet::Cache &cache, const std::vector<std::string> &command){
         /*
@@ -46,9 +62,13 @@ namespace {
                 std::string key = command[1];
                 std::string value = command[2];
                 if(command.size() == 3){
-                    cache.set(key, value);
+                    set_with_eviction(cache, result, key, value, std::nullopt);
                     result.modified = true;
                     result.reply = Cachelet::resp::encode_simple_string("OK");
+                    if(result.log_command != std::nullopt){ // e.g. eviction occurred, and log_command has been emplaced
+                        result.log_command->push_back({"SET", key, value});
+                    }
+
                 } else if(command.size() == 5){ // extraneous, but emphasize this is the TTL path
                     
                     std::string ttl_unit = command[3];
@@ -86,7 +106,7 @@ namespace {
                             ttl = std::chrono::milliseconds{ttl_value};
                         }
 
-                        cache.set(key, value, ttl);
+                        set_with_eviction(cache, result, key, value, ttl);
                         result.modified = true;
                         result.reply = Cachelet::resp::encode_simple_string("OK");
                         auto expire_at = std::chrono::system_clock::now() + ttl;
@@ -94,7 +114,10 @@ namespace {
 
                         // we need the aof to use PXAT exclusively because it uses system time instead of steady time
                         // (steady time relies on the system being up, which is not guaranteed in the case where AOF would become useful)
-                        result.log_command = {"SET", key, value, "PXAT", std::to_string(expire_ms)};
+                        if(!result.log_command){ // need to ensure result_log exists
+                            result.log_command.emplace();
+                        }
+                        result.log_command->push_back({"SET", key, value, "PXAT", std::to_string(expire_ms)});
                     } else if(ttl_unit == "PXAT" || ttl_unit == "EXAT"){
                         // PXAT, e.g. we set to a specific expiry timestamp
                         // ttl value will be in milliseconds (PXAT) or seconds (EXAT) since epoch
@@ -136,7 +159,13 @@ namespace {
                             // key already expired
                             cache.del(key);
                         } else {
-                            cache.set(key, value, std::chrono::milliseconds{remaining_ms});
+                            // TTL valid, set with the PXAT-derived value
+                            set_with_eviction(cache, result, key, value, std::chrono::milliseconds(remaining_ms));
+                            if(!result.log_command){ // need to ensure result_log exists
+                                result.log_command.emplace();
+                            }
+                            result.log_command->push_back({"SET", key, value, "PXAT", 
+                                std::to_string(std::chrono::milliseconds{expire_ms}.count())});
                         }
                         result.reply = Cachelet::resp::encode_simple_string("OK");
                         result.modified = true;
@@ -200,7 +229,13 @@ std::string Cachelet::dispatch(Cachelet::Cache &cache, const std::vector<std::st
 std::string Cachelet::dispatch(Cachelet::Cache &cache, AOF& aof, const std::vector<std::string> &command) {
     DispatchResult result = dispatch_helper(cache, command);
     if(result.modified){
-        aof.append_command(result.log_command == std::nullopt ? command : *result.log_command);
+        if(result.log_command != std::nullopt){
+            for(const std::vector<std::string> &vec : *result.log_command){
+                aof.append_command(vec);
+            }
+        } else {
+            aof.append_command(command);
+        }
     }
     return result.reply;
 }
