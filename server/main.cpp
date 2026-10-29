@@ -177,6 +177,7 @@ int main(int argc, char* argv[]){
     std::optional<Cachelet::AOF::Policy> aof_policy = Cachelet::AOF::Policy::everysec;
     std::string aof_filename = "cachelet.aof";
     int port = 6379; // default port, we will accept a flag too
+    std::size_t max_entries = std::numeric_limits<std::size_t>::max();
     for(int i = 1; i < argc; i++){
         std::string flag = argv[i];
         if(flag == "--appendonly"){
@@ -236,13 +237,38 @@ int main(int argc, char* argv[]){
                 std::cerr << "port should be an integer between 1 and 65535 inclusive\n";
                 return 1;
             }
+        } else if(flag == "--maxentries"){
+            if(i + 1 >= argc){
+                std::cerr << "--maxentries needs a value!\n";
+                return 1;
+            }
+            std::string max_entries_string = argv[++i];
+            try {
+                std::size_t parsed_count = 0;
+                long long raw_max_entries = std::stoll(max_entries_string, &parsed_count); // make sure we pass into a signed long long
+                if(parsed_count != max_entries_string.size()){
+                    std::cerr << "error reading --maxentries value\n";
+                    return 1;
+                }
+                if(raw_max_entries <= 0){
+                    std::cerr << "maxentries should be an integer greater than 0\n";
+                    return 1;
+                }
+                max_entries = static_cast<std::size_t>(raw_max_entries);
+            } catch (const std::invalid_argument &e){ // not convertible into a long long
+                std::cerr << "maxentries should be an integer greater than 0\n";
+                return 1;
+            } catch(const std::out_of_range &e){ // doesnt fit into a long long
+                std::cerr << "maxentries should be an integer greater than 0\n";
+                return 1;
+            }
         } else {
             std::cerr << "flag not recognized!\n";
             return 1;
         }
     }
 
-    Cache cache; // TODO No way to input max items
+    Cache cache(max_entries);
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock == -1){
