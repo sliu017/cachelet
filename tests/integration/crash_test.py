@@ -8,11 +8,11 @@ def free_port():
         s.bind(("localhost", 0)) # port 0 -> OS picks unused
         return s.getsockname()[1]
 
-def start_server(port, aof_path, policy):
+def start_server(port, aof_path, policy, extra_args=()):
     proc = subprocess.Popen(
         [SERVER, "--port", str(port),
          "--appendonly", "yes", "--appendfsync", policy,
-         "--appendfilename", aof_path],
+         "--appendfilename", aof_path, *extra_args],
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     # Wait until the port accepts connections, instead of sleeping a fixed time
     for _ in range(50):
@@ -51,11 +51,11 @@ def run(policy):
         reply = command(port, "DEL", "Venezuela")
         assert(reply == b":1\r\n")
 
-        reply = command(port, "SET", "Latvia", "Riga", "EX", "1")
+        reply = command(port, "SET", "Latvia", "Riga", "PX", "500")
         assert(reply == b"+OK\r\n")
         server.send_signal(signal.SIGKILL)
         server.wait()
-        time.sleep(2)
+        time.sleep(1)
     
         server = start_server(port, aof, policy)
         try:
@@ -74,6 +74,39 @@ def run(policy):
             server.wait()
     print(f"{policy}: ok")
 
+def run_eviction(policy):
+    port = free_port()
+    flags = ("--maxentries", "2")
+    with tempfile.TemporaryDirectory() as tmp:
+        aof = os.path.join(tmp, "test.aof")
+
+        server = start_server(port, aof, policy, flags)
+        assert command(port, "SET", "Tunisia", "Tunis") == b"+OK\r\n"
+        assert command(port, "SET", "Mozambique", "Maputo") == b"+OK\r\n"
+        # GETting Tunisia makes it most recently used, so Mozambique is LRU
+        assert command(port, "GET", "Tunisia") == b"$5\r\nTunis\r\n"
+        # SET then evicts Mozambique
+        assert command(port, "SET", "India", "New Delhi") == b"+OK\r\n"
+
+        server.send_signal(signal.SIGKILL)
+        server.wait()
+
+        server = start_server(port, aof, policy, flags)
+        try:
+            reply = command(port, "GET", "Tunisia")
+            assert reply == b"$5\r\nTunis\r\n", reply
+            reply = command(port, "GET", "Mozambique")
+            assert reply == b"$-1\r\n", reply
+            reply = command(port, "GET", "India")
+            assert reply == b"$9\r\nNew Delhi\r\n", reply
+            reply = command(port, "DBSIZE")
+            assert reply == b":2\r\n", reply
+        finally:
+            server.kill()
+            server.wait()
+    print(f"eviction ({policy}): ok")
+
 if __name__ == "__main__":
     for policy in ["always", "everysec", "no"]:
         run(policy)
+    run_eviction("everysec")
