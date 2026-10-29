@@ -44,13 +44,19 @@ def run(policy):
         server = start_server(port, aof, policy)
         reply = command(port, "SET", "Venezuela", "Caracas")
         assert(reply == b"+OK\r\n")
-        reply = command(port, "SET", "Bangladesh", "Dhaka")
+        reply = command(port, "SET", "Bangladesh", "Dakar")
+        assert(reply == b"+OK\r\n")
+        reply = command(port, "SET", "Bangladesh", "Dhaka") # ensure overwrite works
         assert(reply == b"+OK\r\n")
         reply = command(port, "DEL", "Venezuela")
         assert(reply == b":1\r\n")
+
+        reply = command(port, "SET", "Latvia", "Riga", "EX", "1")
+        assert(reply == b"+OK\r\n")
         server.send_signal(signal.SIGKILL)
         server.wait()
-
+        time.sleep(2)
+    
         server = start_server(port, aof, policy)
         try:
             reply = command(port, "GET", "Bangladesh")
@@ -58,6 +64,9 @@ def run(policy):
             reply = command(port, "DBSIZE")
             assert(reply == b":1\r\n")
             reply = command(port, "GET","Venezuela")
+            assert(reply == b"$-1\r\n")
+
+            reply = command(port, "GET", "Latvia")
             assert(reply == b"$-1\r\n")
             pass
         finally:
