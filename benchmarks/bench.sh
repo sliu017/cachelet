@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # bench.sh: benchmark one cachelet-server binary with redis-benchmark.
 #
-# Usage:   ./bench.sh <path-to-server-binary> [label]
+# Usage:   ./bench.sh <path-to-server-binary> [label] [server args...]
 # Example: ./bench.sh build/cachelet-server epoll
 #          ./bench.sh ../cachelet-poll/build/cachelet-server poll
+#          ./bench.sh build-release/cachelet-server cachelet-always --appendonly yes --appendfsync always
 #
 # Optional environment variables:
 #   RUNS=3                   how many times to repeat each benchmark
@@ -13,6 +14,7 @@ set -euo pipefail # any failure terminates the script, unset vars = error (for s
 BIN=${1:?usage: ./bench.sh <server-binary> [label]} # set BIN to be the path of the server binary (required)
 LABEL=${2:-$(basename "$(dirname "$(dirname "$(realpath "$BIN")")")")} # runs from build/cachelet-server, step back twice for the label
 SERVER_ARGS=("${@:3}")   # all arguments from the 3rd onward, as an array
+BIN=$(realpath "$BIN")   # absolute path, since the server is started from a temp directory below
 PORT=6379
 RUNS=${RUNS:-3} # default to 3 runs
 OUT=${OUT:-benchmarks/results.csv}
@@ -20,7 +22,7 @@ OUT=${OUT:-benchmarks/results.csv}
 # list of benchmarks
 BENCHMARKS=(
   "c50_small|-c 50 -n 100000 -t ping_mbulk,set,get" # relatively small request count, client count
-  "c50_100kb|-c 50 -n 10000 -d 100000 -t set,get" # large data size
+  "c50_100kb|-c 50 -n 10000 -d 100000 -t set,get" # large data size (NOTE: ~1 GB of AOF per run with persistence on)
   "c1000_small|-c 1000 -n 200000 -t get" # larger number of clients, 1000
 )
 
@@ -37,11 +39,17 @@ fi
 # commit hash of the commit being tested, also works for work trees
 COMMIT=$(git -C "$(dirname "$BIN")" rev-parse --short HEAD 2>/dev/null || echo unknown)
 
+# fresh working directory per invocation, so any persistence files (cachelet.aof, Redis's AOF)
+# start empty and never carry over between runs
+WORKDIR=$(mktemp -d)
+SERVER_PID=""
+# trap analogous to finally: ALWAYS kill the server and delete the temp dir on exit, no matter the reason
+trap '[[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null; rm -rf "$WORKDIR"' EXIT
 
-# start server in background, ALWAYS killed on exit, no matter reason
-"$BIN" "${SERVER_ARGS[@]}" >/dev/null 2>&1 &
+# start server in background from inside WORKDIR
+# exec makes the subshell become the server, so $! is the server's own PID
+(cd "$WORKDIR" && exec "$BIN" "${SERVER_ARGS[@]}") >/dev/null 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT # trap analogous to finally
 
 # wait ~5s for server to start
 for _ in $(seq 50); do
