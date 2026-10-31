@@ -330,6 +330,7 @@ int main(int argc, char* argv[]){
     }
 
     std::unordered_map<int, Client> fd_to_client;
+    int MAX_EVENTS = 1024; // we will adapt our event vector size to demand, but set a growth ceiling at 1024
     std::vector<epoll_event> events(64); // scratch vector for the kernel to write to, it receives information about ready file descriptors
     std::unordered_set<int> pending_fds; // clients that might have output, ensure we check after flushing to aof
     // need the above set because we no longer immediately send output whenever can, as we must go through the flush step first, THEN output
@@ -408,5 +409,10 @@ int main(int argc, char* argv[]){
             remove_client(epollfd, failed_fd, fd_to_client, pending_fds);
         }
         pending_fds.clear(); // we've dealt with the possible outputs from each of the candidate fds, so clear until next iteration
+
+        // double vector size if the number of clients we're taking on is reaching the limits of what events can hold
+        if (static_cast<std::size_t>(event_count) == events.size() && events.size() < MAX_EVENTS) {
+            events.resize(events.size() * 2);
+        }
     }
 }

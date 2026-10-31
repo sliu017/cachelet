@@ -5,5 +5,4 @@
 asan.txt
 benchmarks.txt
 
-/benchmarks/results.csv
-/benchmarks/persistence_results.csv
+/benchmarks/data
