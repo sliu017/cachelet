@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <filesystem>
 #include <iostream>
 #include <cerrno>
 #include <cstring>
@@ -21,6 +22,25 @@ namespace {
         for(char &c : str){
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); 
         }
+    }
+
+    // continuously calls write() on the remaining bytes until everything is written
+    // only returns false on a fatal error
+    bool write_all(int fd, const std::string &str){
+        size_t offset = 0;
+        while(offset < str.size()){
+            ssize_t bytes_written = write(fd, str.data() + offset, str.size() - offset);
+            if(bytes_written < 0){
+                if(errno == EINTR){
+                    // interrupted, not a fatal issue
+                    continue;
+                }
+                perror("write");
+                return false;
+            }
+            offset += static_cast<size_t>(bytes_written);
+        }
+        return true;
     }
 }
 
@@ -71,20 +91,12 @@ bool Cachelet::AOF::flush(){
         // for performance, don't want to run all the code below if no state change in cache
         return true;
     }
-    while(!buffer.empty()){
-        ssize_t bytes_written = write(fd, buffer.data(), buffer.size());
-        if(bytes_written < 0){
-            if(errno == EINTR){
-                // interrupted, not a fatal issue
-                continue;
-            } else {
-                perror("write");
-                return false;
-            }
-        } else {
-            needs_fsync = true;
-            buffer.erase(0, bytes_written);
+    if(!buffer.empty()){
+        if(!write_all(fd, buffer)){
+            return false;
         }
+        needs_fsync = true;
+        buffer.clear();
     }
 
     if(policy == Cachelet::AOF::Policy::always){
@@ -177,4 +189,78 @@ void Cachelet::replay(const std::string &path, Cachelet::Cache &cache){
     }
     close(fd);
     std::cout << "Replayed " << replayed_command_count << " commands successfully\n";
+}
+
+bool Cachelet::AOF::rewrite(const Cache &cache){
+    std::string output; // to be written to the temp file, essentially what we want to rewrite our AOF log to
+    // later, we can periodically write output to the temp file once it exceeds 1 MB, for performance
+
+    cache.for_each([&](const std::string &key, const std::string &value, 
+    std::optional<std::chrono::steady_clock::time_point> expire){
+        if(expire && *expire <= std::chrono::steady_clock::now()){
+            return;
+        }
+        std::vector<std::string> command = {"SET", key, value};
+        if(expire){
+            // ttl, so calculate PXAT (e.g. the system clock epoch-based time at which this key expires)
+            auto time_left = *expire - std::chrono::steady_clock::now();
+            auto expire_at = std::chrono::system_clock::now() + time_left;
+            auto expire_ms = std::chrono::duration_cast<std::chrono::milliseconds>
+            (expire_at.time_since_epoch()).count();
+            command.push_back("PXAT");
+            command.push_back(std::to_string(expire_ms));
+        }
+        output += Cachelet::resp::encode_array(command);
+    });
+
+    std::string temp_path = path + ".tmp";
+    int temp_fd = open(temp_path.data(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // TRUNC to ensure partly-written files don't get mixed in
+    if(temp_fd == -1){
+        perror("open");
+        return false;
+    }
+    if(!write_all(temp_fd, output)){
+        // already perrors in write_all
+        close(temp_fd);
+        unlink(temp_path.data()); // analagous to rm
+        return false;
+    }
+    if(fsync(temp_fd) == -1){
+        perror("fsync");
+        close(temp_fd);
+        unlink(temp_path.data());
+        return false;
+    }
+    close(temp_fd);
+
+    if(rename(temp_path.c_str(), path.c_str()) == -1){ // WLOG renames "cachelet.aof.tmp" to "cachelet.aof", replaces old aof with rewrite 
+        perror("rename");
+        unlink(temp_path.data());
+        return false;
+    }
+    // from this point forward the old AOF log has been permanently changed
+    // we now fsync the directory itself to ensure it points to the now renamed file
+    std::string dir = std::filesystem::path(path).parent_path().string();
+    if(dir.empty()){
+        dir = "."; // if no directory given, we can just resort to the relative directory the command was called from
+    }
+    int dir_fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY); // read only and ensure called on a directory
+    if(dir_fd == -1){
+        perror("open dir");
+        return false;
+    }
+    if(fsync(dir_fd) == -1){
+        perror("fsync dir");
+        close(dir_fd);
+        return false;
+    }
+    close(dir_fd);
+    int new_fd = open(path.c_str(), O_CREAT | O_APPEND | O_WRONLY, 0644);
+    if(new_fd == -1){
+        perror("open [reopen after rewrite]");
+        return false;
+    }
+    close(fd);
+    fd = new_fd;
+    return true;
 }

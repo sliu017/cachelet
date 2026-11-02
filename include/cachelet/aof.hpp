@@ -22,6 +22,7 @@ namespace Cachelet {
 
         void append_command(const std::vector<std::string> &command);
         bool flush();
+        bool rewrite(const Cache &cache);
 
         private:
         int fd; // file descriptor to write to
