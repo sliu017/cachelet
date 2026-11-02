@@ -42,6 +42,7 @@ std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &p
 // policy comes in as a cli arg. but conversion should happen where those args are read (catch malformed input there)
 Cachelet::AOF::AOF(const std::string &path, Cachelet::AOF::Policy policy)
         : policy(policy),
+        path(path),
         last_fsync(std::chrono::steady_clock::now()),
         needs_fsync(false){
 
@@ -59,13 +60,7 @@ Cachelet::AOF::~AOF(){
 }
 
 void Cachelet::AOF::append_command(const std::vector<std::string> &command){
-    // Create a RESP array, which follows the format *ELEM_COUNT
-    // Then ELEM_COUNT lines of $LENGTH\r\nBYTES\r\n (handled by an already written encode method)
-    std::string array = "*" + std::to_string(command.size()) + ("\r\n");
-    for(const std::string &token : command){
-        array.append(Cachelet::resp::encode_bulk_string(token));
-    }
-    buffer.append(array);
+    buffer.append(Cachelet::resp::encode_array(command));
 }
 
 bool Cachelet::AOF::flush(){

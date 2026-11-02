@@ -1,6 +1,7 @@
 #pragma once // make sure only compiled once per build
 
 #include <chrono>
+#include <functional>
 #include <iterator>
 #include <list>
 #include <optional>
@@ -34,6 +35,10 @@ namespace Cachelet {
         std::size_t size() const;
         
         void bring_entry_to_front(std::list<Entry>::iterator entry_it);
+
+        // iterate through each element of the DLL (std::list) in such a way that does not expose data structure internals to a client
+        void for_each(const std::function<void (const std::string &key, const std::string &value, 
+                        const std::optional<std::chrono::steady_clock::time_point> &expire)> &visit) const;
     };
 }
 

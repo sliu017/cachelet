@@ -6,10 +6,11 @@
 #include <list>
 #include <optional>
 #include <unordered_map>
+#include <ranges>
 #include <string>
 #include <stdexcept>
 
-// construct the defualt constructor with the system integer limit (e.g. max unsigned value for a 64 bit int on my machine)
+// construct the default constructor with the system integer limit (e.g. max unsigned value for a 64 bit int on my machine)
 Cachelet::Cache::Cache() : MAX_ENTRIES(std::numeric_limits<std::size_t>::max()){
 
 }
@@ -26,7 +27,8 @@ std::optional<std::string> Cachelet::Cache::set(std::string const &key, std::str
 }
 
 // Set with a TTL
-std::optional<std::string> Cachelet::Cache::set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl){
+std::optional<std::string> Cachelet::Cache::set(std::string const &key, std::string const &value, 
+    std::chrono::steady_clock::duration const &ttl){
     return set_helper(key, value, ttl);
 }
 
@@ -107,6 +109,16 @@ void Cachelet::Cache::bring_entry_to_front(std::list<Entry>::iterator entry_it){
     // brings the specified entry to the start of the linked list, e.g. it is the most recently used
     lru_cache.splice(lru_cache.begin(), lru_cache, entry_it);
     // uses splice to efficiently move the target node to the beginning of the list
+}
+
+void Cachelet::Cache::for_each(const std::function<void (const std::string &key, const std::string &value, 
+                const std::optional<std::chrono::steady_clock::time_point> &expire)> &visit) const {
+    // need to walk in reverse order to preserve LRU property
+    // in reverse order, we pass in the least recently used keys first, which means they are SET first
+    // then in the final cache reconstruction, they will similarly be the least recently used
+    for(const Entry &entry : std::views::reverse(lru_cache)){
+        visit(entry.key, entry.value, entry.expire_time);
+    }
 }
 
 

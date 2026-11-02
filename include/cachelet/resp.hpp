@@ -28,6 +28,7 @@ namespace Cachelet {
         std::string encode_integer(std::int64_t response);
         std::string encode_bulk_string(const std::string &response);
         std::string encode_null_bulk_string();
+        std::string encode_array(const std::vector<std::string> &array);
         
     };
 }

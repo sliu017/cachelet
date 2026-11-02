@@ -354,3 +354,8 @@ TEST(EncodeTest, EncodeEmptyBulkString){
 TEST(EncodeTest, EncodeNullBulkString){
     EXPECT_EQ(encode_null_bulk_string(), "$-1\r\n");
 }
+
+TEST(EncodeTest, EncodeArray){
+    EXPECT_EQ(encode_array({"SET", "Croatia", "Zagreb"}),
+    "*3\r\n$3\r\nSET\r\n$7\r\nCroatia\r\n$6\r\nZagreb\r\n");
+}

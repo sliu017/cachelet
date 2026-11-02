@@ -251,5 +251,14 @@ std::string encode_null_bulk_string(){
     return "$-1\r\n";
 
 }
+std::string encode_array(const std::vector<std::string> &array){
+    // Create a RESP array, which follows the format *ELEM_COUNT
+    // Then ELEM_COUNT lines of $LENGTH\r\nBYTES\r\n (handled by an already written encode method)
+    std::string response = "*" + std::to_string(array.size()) + ("\r\n");
+    for(const std::string &s : array){
+        response += encode_bulk_string(s);
+    }
+    return response;
+}
 
 }

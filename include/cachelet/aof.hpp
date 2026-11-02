@@ -28,6 +28,7 @@ namespace Cachelet {
         Cachelet::AOF::Policy policy;
         std::chrono::steady_clock::time_point last_fsync; // note time of the last fsync, CONSTRUCT TO NOW()
         std::string buffer; // holds commands appended during the current iteration
+        std::string path;
         bool needs_fsync;
     };
     
