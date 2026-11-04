@@ -33,10 +33,14 @@ namespace Cachelet {
         std::chrono::steady_clock::time_point last_fsync; // note time of the last fsync, CONSTRUCT TO NOW()
         std::string buffer; // holds commands appended during the current iteration
         std::string path;
+        bool needs_fsync;
         std::size_t log_size; // keeps track of current AOF log size, pretty convenient to track b/c of append-only property
         std::size_t size_on_last_rewrite; // keeps track of AOF log size after last compaction rewrite
-        static constexpr std::size_t MIN_REWRITE_SIZE = 64 * 1024 * 1024; // 64 MB
-        bool needs_fsync;
+        std::chrono::steady_clock::time_point last_rewrite_attempt; // tracks last time we tried to rewrite (success or safe failure)
+
+        static constexpr std::size_t MIN_REWRITE_SIZE = 64 * 1024 * 1024; // 64 MB, the min size at which we will consider compacting
+        // when we face a nonfatal error (e.g. disk full?), amount of time to wait before retrying the compaction
+        static constexpr auto REWRITE_RETRY_DELAY = std::chrono::seconds(5); 
     };
     
     void replay(const std::string &path, Cachelet::Cache &cache);

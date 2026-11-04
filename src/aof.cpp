@@ -49,7 +49,9 @@ namespace {
 bool Cachelet::AOF::should_rewrite() const{
     // Rule: Rewrite if the size of the log is larger than the minimum (64 MB)
     // And it's more than 2x larger than the size on last rewrite
-    return log_size >= MIN_REWRITE_SIZE && log_size > 2 * size_on_last_rewrite;
+    // And it's been more than REWRITE_RETRY_DELAY seconds since our last rewrite attempt
+    return last_rewrite_attempt  + REWRITE_RETRY_DELAY <= std::chrono::steady_clock::now() &&
+    log_size >= MIN_REWRITE_SIZE && log_size > 2 * size_on_last_rewrite;
 }
 
 std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &policy_string){
@@ -72,7 +74,8 @@ Cachelet::AOF::AOF(const std::string &path, Cachelet::AOF::Policy policy)
         : policy(policy),
         last_fsync(std::chrono::steady_clock::now()),
         path(path),
-        needs_fsync(false){ 
+        needs_fsync(false),
+        last_rewrite_attempt(std::chrono::steady_clock::time_point::min()){ 
     fd = open(path.data(), O_CREAT | O_APPEND | O_WRONLY, 0644); // should be write only?
     // note: 0644 is the permissions in octal, not really too important for single user machine
     if(fd == -1){
@@ -237,18 +240,21 @@ auto Cachelet::AOF::rewrite(const Cache &cache) -> RewriteResult{
     int temp_fd = open(temp_path.data(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // TRUNC to ensure partly-written files don't get mixed in
     if(temp_fd == -1){
         perror("open");
+        last_rewrite_attempt = std::chrono::steady_clock::now();
         return RewriteResult::failed_safe;
     }
     if(!write_all(temp_fd, output)){
         // already perrors in write_all
         close(temp_fd);
         unlink(temp_path.data()); // analagous to rm
+        last_rewrite_attempt = std::chrono::steady_clock::now();
         return RewriteResult::failed_safe;
     }
     if(fsync(temp_fd) == -1){
         perror("fsync");
         close(temp_fd);
         unlink(temp_path.data());
+        last_rewrite_attempt = std::chrono::steady_clock::now();
         return RewriteResult::failed_safe;
     }
     close(temp_fd);
@@ -256,6 +262,7 @@ auto Cachelet::AOF::rewrite(const Cache &cache) -> RewriteResult{
     if(rename(temp_path.c_str(), path.c_str()) == -1){ // WLOG renames "cachelet.aof.tmp" to "cachelet.aof", replaces old aof with rewrite 
         perror("rename");
         unlink(temp_path.data());
+        last_rewrite_attempt = std::chrono::steady_clock::now();
         return RewriteResult::failed_safe;
     }
     // from this point forward the old AOF log has been permanently changed
@@ -285,5 +292,6 @@ auto Cachelet::AOF::rewrite(const Cache &cache) -> RewriteResult{
     needs_fsync = false; // we already fsynced before the rename
     log_size = output.size();
     size_on_last_rewrite = output.size();
+    last_rewrite_attempt = std::chrono::steady_clock::now();
     return RewriteResult::ok;
 }

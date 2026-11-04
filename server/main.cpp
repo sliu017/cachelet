@@ -410,9 +410,22 @@ int main(int argc, char* argv[]){
         }
         pending_fds.clear(); // we've dealt with the possible outputs from each of the candidate fds, so clear until next iteration
 
+        if(aof_log && aof_log->should_rewrite()){ // if we've reached a size limit and should rewrite the AOF more compactly
+            auto result = aof_log->rewrite(cache);
+            if(result == Cachelet::AOF::RewriteResult::failed_fatal){
+                std::cerr << "AOF rewrite failed after renaming swap, exiting to avoid losing writes\n";
+                // in this case, fd is still referring to an old file that has since been deleted
+                // so future writes will be unrecoverable
+                return 1;
+            } else if(result == Cachelet::AOF::RewriteResult::failed_safe){
+                std::cerr << "AOF rewrite failed, keeping existing log\n";
+            }
+        }
+
         // double vector size if the number of clients we're taking on is reaching the limits of what events can hold
         if (static_cast<std::size_t>(event_count) == events.size() && events.size() < MAX_EVENTS) {
             events.resize(events.size() * 2);
         }
+
     }
 }
