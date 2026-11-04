@@ -5,14 +5,15 @@
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/stat.h>
 #include <filesystem>
 #include <iostream>
 #include <cerrno>
-#include <cstring>
 #include <cctype>
 #include <system_error>
 #include <stdexcept>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 
 using namespace std::chrono_literals;
 
@@ -42,6 +43,13 @@ namespace {
         }
         return true;
     }
+
+}
+
+bool Cachelet::AOF::should_rewrite() const{
+    // Rule: Rewrite if the size of the log is larger than the minimum (64 MB)
+    // And it's more than 2x larger than the size on last rewrite
+    return log_size >= MIN_REWRITE_SIZE && log_size > 2 * size_on_last_rewrite;
 }
 
 std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &policy_string){
@@ -62,17 +70,27 @@ std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &p
 // policy comes in as a cli arg. but conversion should happen where those args are read (catch malformed input there)
 Cachelet::AOF::AOF(const std::string &path, Cachelet::AOF::Policy policy)
         : policy(policy),
-        path(path),
         last_fsync(std::chrono::steady_clock::now()),
-        needs_fsync(false){
-
+        path(path),
+        needs_fsync(false){ 
     fd = open(path.data(), O_CREAT | O_APPEND | O_WRONLY, 0644); // should be write only?
     // note: 0644 is the permissions in octal, not really too important for single user machine
-    
     if(fd == -1){
         throw std::system_error(errno, std::generic_category(),
                                         "failed to open AOF at " +path);
     }
+
+    struct stat st;
+    if(fstat(fd, &st) == -1){ // get file size of log
+        int err = errno;
+        close(fd);
+        throw std::system_error(err, std::generic_category(),
+                                        "failed to call fstat on newly opened file");
+    }
+    
+    log_size = static_cast<std::size_t>(st.st_size);
+    size_on_last_rewrite = log_size;
+
 }
 
 Cachelet::AOF::~AOF(){
@@ -80,7 +98,8 @@ Cachelet::AOF::~AOF(){
 }
 
 void Cachelet::AOF::append_command(const std::vector<std::string> &command){
-    buffer.append(Cachelet::resp::encode_array(command));
+    std::string encode_result = Cachelet::resp::encode_array(command);
+    buffer.append(encode_result);
 }
 
 bool Cachelet::AOF::flush(){
@@ -95,6 +114,7 @@ bool Cachelet::AOF::flush(){
         if(!write_all(fd, buffer)){
             return false;
         }
+        log_size += buffer.size();
         needs_fsync = true;
         buffer.clear();
     }
@@ -191,7 +211,7 @@ void Cachelet::replay(const std::string &path, Cachelet::Cache &cache){
     std::cout << "Replayed " << replayed_command_count << " commands successfully\n";
 }
 
-bool Cachelet::AOF::rewrite(const Cache &cache){
+auto Cachelet::AOF::rewrite(const Cache &cache) -> RewriteResult{
     std::string output; // to be written to the temp file, essentially what we want to rewrite our AOF log to
     // later, we can periodically write output to the temp file once it exceeds 1 MB, for performance
 
@@ -217,26 +237,26 @@ bool Cachelet::AOF::rewrite(const Cache &cache){
     int temp_fd = open(temp_path.data(), O_WRONLY | O_CREAT | O_TRUNC, 0644); // TRUNC to ensure partly-written files don't get mixed in
     if(temp_fd == -1){
         perror("open");
-        return false;
+        return RewriteResult::failed_safe;
     }
     if(!write_all(temp_fd, output)){
         // already perrors in write_all
         close(temp_fd);
         unlink(temp_path.data()); // analagous to rm
-        return false;
+        return RewriteResult::failed_safe;
     }
     if(fsync(temp_fd) == -1){
         perror("fsync");
         close(temp_fd);
         unlink(temp_path.data());
-        return false;
+        return RewriteResult::failed_safe;
     }
     close(temp_fd);
 
     if(rename(temp_path.c_str(), path.c_str()) == -1){ // WLOG renames "cachelet.aof.tmp" to "cachelet.aof", replaces old aof with rewrite 
         perror("rename");
         unlink(temp_path.data());
-        return false;
+        return RewriteResult::failed_safe;
     }
     // from this point forward the old AOF log has been permanently changed
     // we now fsync the directory itself to ensure it points to the now renamed file
@@ -247,20 +267,23 @@ bool Cachelet::AOF::rewrite(const Cache &cache){
     int dir_fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY); // read only and ensure called on a directory
     if(dir_fd == -1){
         perror("open dir");
-        return false;
+        return RewriteResult::failed_fatal;
     }
     if(fsync(dir_fd) == -1){
         perror("fsync dir");
         close(dir_fd);
-        return false;
+        return RewriteResult::failed_fatal;
     }
     close(dir_fd);
     int new_fd = open(path.c_str(), O_CREAT | O_APPEND | O_WRONLY, 0644);
     if(new_fd == -1){
         perror("open [reopen after rewrite]");
-        return false;
+        return RewriteResult::failed_fatal;
     }
     close(fd);
     fd = new_fd;
-    return true;
+    needs_fsync = false; // we already fsynced before the rename
+    log_size = output.size();
+    size_on_last_rewrite = output.size();
+    return RewriteResult::ok;
 }
