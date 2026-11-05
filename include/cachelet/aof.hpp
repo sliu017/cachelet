@@ -12,7 +12,9 @@ namespace Cachelet {
         enum class Policy {no, everysec, always}; // plan to add more eventually
         enum class RewriteResult {ok, failed_safe, failed_fatal};
 
-        AOF(const std::string &path, Cachelet::AOF::Policy policy);
+        static constexpr std::size_t DEFAULT_MIN_REWRITE_SIZE = 64 * 1024 * 1024; // 64 MB
+
+        AOF(const std::string &path, Cachelet::AOF::Policy policy, std::size_t min_rewrite_size = DEFAULT_MIN_REWRITE_SIZE);
         ~AOF();
         // disallow copies, because the AOF case is analogous to the raw pointer case 
         // (where copies point to the same spot in memory, leading to incorrect behavior)
@@ -38,7 +40,8 @@ namespace Cachelet {
         std::size_t size_on_last_rewrite; // keeps track of AOF log size after last compaction rewrite
         std::chrono::steady_clock::time_point last_rewrite_attempt; // tracks last time we tried to rewrite (success or safe failure)
 
-        static constexpr std::size_t MIN_REWRITE_SIZE = 64 * 1024 * 1024; // 64 MB, the min size at which we will consider compacting
+        std::size_t min_rewrite_size; // the min size at which we will consider compacting, defaults to 64 MB
+
         // when we face a nonfatal error (e.g. disk full?), amount of time to wait before retrying the compaction
         static constexpr auto REWRITE_RETRY_DELAY = std::chrono::seconds(5); 
     };

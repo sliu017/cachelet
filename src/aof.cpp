@@ -51,7 +51,7 @@ bool Cachelet::AOF::should_rewrite() const{
     // And it's more than 2x larger than the size on last rewrite
     // And it's been more than REWRITE_RETRY_DELAY seconds since our last rewrite attempt
     return last_rewrite_attempt  + REWRITE_RETRY_DELAY <= std::chrono::steady_clock::now() &&
-    log_size >= MIN_REWRITE_SIZE && log_size > 2 * size_on_last_rewrite;
+    log_size >= min_rewrite_size && log_size > 2 * size_on_last_rewrite;
 }
 
 std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &policy_string){
@@ -70,12 +70,13 @@ std::optional<Cachelet::AOF::Policy> Cachelet::parse_policy(const std::string &p
 
 // constructor, takes string path and policy
 // policy comes in as a cli arg. but conversion should happen where those args are read (catch malformed input there)
-Cachelet::AOF::AOF(const std::string &path, Cachelet::AOF::Policy policy)
+Cachelet::AOF::AOF(const std::string &path, Cachelet::AOF::Policy policy, std::size_t min_rewrite_size)
         : policy(policy),
         last_fsync(std::chrono::steady_clock::now()),
         path(path),
         needs_fsync(false),
-        last_rewrite_attempt(std::chrono::steady_clock::time_point::min()){ 
+        last_rewrite_attempt(std::chrono::steady_clock::time_point::min()),
+        min_rewrite_size(min_rewrite_size){ 
     fd = open(path.data(), O_CREAT | O_APPEND | O_WRONLY, 0644); // should be write only?
     // note: 0644 is the permissions in octal, not really too important for single user machine
     if(fd == -1){

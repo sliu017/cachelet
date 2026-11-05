@@ -18,6 +18,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <limits>
+#include <optional>
 
 #include <sys/epoll.h>
 
@@ -178,6 +180,7 @@ int main(int argc, char* argv[]){
     std::string aof_filename = "cachelet.aof";
     int port = 6379; // default port, we will accept a flag too
     std::size_t max_entries = std::numeric_limits<std::size_t>::max();
+    std::size_t rewrite_size = Cachelet::AOF::DEFAULT_MIN_REWRITE_SIZE;
     for(int i = 1; i < argc; i++){
         std::string flag = argv[i];
         if(flag == "--appendonly"){
@@ -262,6 +265,31 @@ int main(int argc, char* argv[]){
                 std::cerr << "maxentries should be an integer greater than 0\n";
                 return 1;
             }
+        } else if(flag == "--aofrewriteminsize"){
+            if(i + 1 >= argc){
+                std::cerr << "--aofrewriteminsize needs a value!\n";
+                return 1;
+            }
+            std::string rewrite_size_string = argv[++i];
+            try {
+                std::size_t parsed_count = 0;
+                long long raw_rewrite_size = std::stoll(rewrite_size_string, &parsed_count); // make sure we pass into a signed long long
+                if(parsed_count != rewrite_size_string.size()){
+                    std::cerr << "error reading --aofrewriteminsize value\n";
+                    return 1;
+                }
+                if(raw_rewrite_size <= 0){
+                    std::cerr << "aof rewrite min size should be an integer greater than 0\n";
+                    return 1;
+                }
+                rewrite_size = static_cast<std::size_t>(raw_rewrite_size);
+            } catch (const std::invalid_argument &e){ // not convertible into a long long
+                std::cerr << "aof rewrite min size should be an integer greater than 0\n";
+                return 1;
+            } catch(const std::out_of_range &e){ // doesnt fit into a long long
+                std::cerr << "aof rewrite min size should be an integer greater than 0\n";
+                return 1;
+            }
         } else {
             std::cerr << "flag not recognized!\n";
             return 1;
@@ -297,7 +325,7 @@ int main(int argc, char* argv[]){
     if(aof){
         try {
             Cachelet::replay(aof_filename, cache);
-            aof_log.emplace(aof_filename, *aof_policy);
+            aof_log.emplace(aof_filename, *aof_policy, rewrite_size);
         } catch(const std::runtime_error &e){
             std::cerr << e.what() << "\n";
             return 1;
@@ -330,7 +358,7 @@ int main(int argc, char* argv[]){
     }
 
     std::unordered_map<int, Client> fd_to_client;
-    int MAX_EVENTS = 1024; // we will adapt our event vector size to demand, but set a growth ceiling at 1024
+    constexpr std::size_t MAX_EVENTS = 1024; // we will adapt our event vector size to demand, but set a growth ceiling at 1024
     std::vector<epoll_event> events(64); // scratch vector for the kernel to write to, it receives information about ready file descriptors
     std::unordered_set<int> pending_fds; // clients that might have output, ensure we check after flushing to aof
     // need the above set because we no longer immediately send output whenever can, as we must go through the flush step first, THEN output
