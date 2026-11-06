@@ -24,6 +24,54 @@ def start_server(port, aof_path, policy, extra_args=()):
     proc.kill()
     raise RuntimeError(f"server didn't start: {proc.stderr.read().decode()}")
 
+def run_compaction(policy):
+    """The log is compacted once it passes the min size, and the compacted log replays correctly."""
+    port = free_port()
+    flags = ("--aofrewriteminsize", "1024")
+    n = 200
+    with tempfile.TemporaryDirectory() as tmp:
+        aof = os.path.join(tmp, "test.aof")
+
+        server = start_server(port, aof, policy, flags)
+        try:
+            # keys that compaction must carry over (or drop) correctly
+            assert command(port, "SET", "Chile", "Santiago", "EX", "60") == b"+OK\r\n"
+            assert command(port, "SET", "Peru", "Lima") == b"+OK\r\n"
+            assert command(port, "DEL", "Peru") == b":1\r\n"
+
+            # many redundant commands
+            for i in range(n):
+                assert command(port, "SET", "counter", str(i)) == b"+OK\r\n"
+
+            # without compaction the log would hold every one of those SETs
+            uncompacted = n * len(encode("SET", "counter", str(n - 1)))
+            size = os.path.getsize(aof)
+            assert size < uncompacted // 2, f"log not compacted: {size} bytes (uncompacted ~{uncompacted})"
+            assert not os.path.exists(aof + ".tmp"), "leftover temp file after rewrite"
+        except BaseException:
+            server.kill()
+            server.wait()
+            raise
+
+        server.send_signal(signal.SIGKILL)
+        server.wait()
+
+        server = start_server(port, aof, policy, flags)
+        try:
+            reply = command(port, "GET", "counter")
+            expected = str(n - 1).encode()
+            assert reply == b"$" + str(len(expected)).encode() + b"\r\n" + expected + b"\r\n", reply
+            reply = command(port, "GET", "Chile")
+            assert reply == b"$8\r\nSantiago\r\n", reply
+            reply = command(port, "GET", "Peru")
+            assert reply == b"$-1\r\n", reply
+            reply = command(port, "DBSIZE")
+            assert reply == b":2\r\n", reply
+        finally:
+            server.kill()
+            server.wait()
+    print(f"compaction ({policy}): ok")
+
 def encode(*args):
     out = f"*{len(args)}\r\n"
     for a in args:
@@ -110,3 +158,4 @@ if __name__ == "__main__":
     for policy in ["always", "everysec", "no"]:
         run(policy)
     run_eviction("everysec")
+    run_compaction("everysec")
