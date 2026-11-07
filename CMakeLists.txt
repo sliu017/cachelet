@@ -6,18 +6,24 @@ add_library(cachelet
     src/resp.cpp 
     src/dispatch.cpp
     src/aof.cpp
+    src/lru_policy.cpp
 )
 add_executable(cache_test)
 add_executable(cachelet-server server/main.cpp)
+
+add_executable(cachelet-sim sim/main.cpp)
+target_compile_options(cachelet-sim PRIVATE -Wall -Wextra)
+
 target_compile_options(cachelet PRIVATE -Wall -Wextra)
 target_compile_options(cachelet-server PRIVATE -Wall -Wextra)
 target_compile_options(cache_test PRIVATE -Wall -Wextra)
 target_sources(cache_test
-    PUBLIC
+    PRIVATE # previously public
         tests/unit/cache_test.cpp
         tests/unit/resp_test.cpp
         tests/unit/dispatch_test.cpp
         tests/unit/aof_test.cpp
+        tests/unit/lru_policy_test.cpp # when we begin introducing multiple tests, we will ensure our interface interacts correctly with each
 )
 
 target_compile_features(cachelet PUBLIC cxx_std_20)
@@ -34,6 +40,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 target_link_libraries(cache_test PUBLIC cachelet GTest::gtest_main)
 target_link_libraries(cachelet-server PRIVATE cachelet)
+target_link_libraries(cachelet-sim PRIVATE cachelet)
 
 option(ENABLE_ASAN "Enable AddressSanitizer" ON) # set to off to disable address sanitizer debugging utilities
 if(ENABLE_ASAN)
