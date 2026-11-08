@@ -17,6 +17,9 @@ namespace Cachelet {
         virtual std::string victim() = 0; // determines the key to be evicted, returns it
         virtual ~EvictionPolicy() = default; // need VIRTUAL destructor bc nonvirtual dests will run on base class, not derived one
         // so if a class like LruPolicy needs extra data structures but ~EvictionPolicy is called on it, those DS will not be deleted
-
+        
+        EvictionPolicy() = default;
+        EvictionPolicy(const EvictionPolicy&) = delete;
+        EvictionPolicy& operator=(const EvictionPolicy&) = delete;
     };
 }
