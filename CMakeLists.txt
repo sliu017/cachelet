@@ -72,6 +72,7 @@ target_sources(cache_test
         tests/unit/dispatch_test.cpp
         tests/unit/aof_test.cpp
         tests/unit/lru_policy_test.cpp # when we begin introducing multiple tests, we will ensure our interface interacts correctly with each
+        tests/unit/simulator_test.cpp
 )
 target_compile_options(cache_test PRIVATE -Wall -Wextra)
 target_link_libraries(cache_test PUBLIC cachelet cachelet_sim_lib GTest::gtest_main)
