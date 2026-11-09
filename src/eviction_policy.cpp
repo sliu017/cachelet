@@ -1,0 +1,15 @@
+#include "cachelet/eviction_policy.hpp"
+
+#include "cachelet/lru_policy.hpp"
+
+#include <memory>
+#include <stdexcept>
+
+std::unique_ptr<Cachelet::EvictionPolicy> Cachelet::make_policy(const std::string &name){
+    if(name == "lru"){
+        return std::make_unique<Cachelet::LruPolicy>();
+    } else { // add other policies here
+        
+    }
+    throw std::invalid_argument("policy not recognized: " +name);
+}

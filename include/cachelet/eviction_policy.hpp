@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <memory>
 
 namespace Cachelet {
     class EvictionPolicy {
@@ -22,4 +23,7 @@ namespace Cachelet {
         EvictionPolicy(const EvictionPolicy&) = delete;
         EvictionPolicy& operator=(const EvictionPolicy&) = delete;
     };
+
+    // name expected to be lowercase, e.g, "lru"
+    std::unique_ptr<EvictionPolicy> make_policy(const std::string &name);
 }

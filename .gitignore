@@ -6,3 +6,5 @@ asan.txt
 benchmarks.txt
 
 /benchmarks/data
+
+/traces/prod

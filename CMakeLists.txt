@@ -27,6 +27,7 @@ add_library(cachelet
     src/dispatch.cpp
     src/aof.cpp
     src/lru_policy.cpp
+    src/eviction_policy.cpp
 )
 target_compile_features(cachelet PUBLIC cxx_std_20)
 set_target_properties(cachelet PROPERTIES CXX_STANDARD_REQUIRED ON)
