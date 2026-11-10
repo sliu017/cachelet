@@ -26,8 +26,10 @@ add_library(cachelet
     src/resp.cpp
     src/dispatch.cpp
     src/aof.cpp
-    src/lru_policy.cpp
     src/eviction_policy.cpp
+    src/policies/lru_policy.cpp 
+    src/policies/fifo_policy.cpp
+
 )
 target_compile_features(cachelet PUBLIC cxx_std_20)
 set_target_properties(cachelet PROPERTIES CXX_STANDARD_REQUIRED ON)
@@ -72,7 +74,7 @@ target_sources(cache_test
         tests/unit/resp_test.cpp
         tests/unit/dispatch_test.cpp
         tests/unit/aof_test.cpp
-        tests/unit/lru_policy_test.cpp # when we begin introducing multiple tests, we will ensure our interface interacts correctly with each
+        tests/unit/policies/lru_policy_test.cpp # when we begin introducing multiple tests, we will ensure our interface interacts correctly with each
         tests/unit/simulator_test.cpp
 )
 target_compile_options(cache_test PRIVATE -Wall -Wextra)

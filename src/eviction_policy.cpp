@@ -1,6 +1,6 @@
 #include "cachelet/eviction_policy.hpp"
 
-#include "cachelet/lru_policy.hpp"
+#include "cachelet/policies/lru_policy.hpp"
 
 #include <memory>
 #include <stdexcept>

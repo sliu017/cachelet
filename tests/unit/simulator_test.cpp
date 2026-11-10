@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "simulator.hpp"
-#include "cachelet/lru_policy.hpp"
+#include "cachelet/policies/lru_policy.hpp"
 
 #include <string>
 #include <vector>

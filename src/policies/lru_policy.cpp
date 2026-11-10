@@ -1,4 +1,4 @@
-#include "cachelet/lru_policy.hpp"
+#include "cachelet/policies/lru_policy.hpp"
 #include <cassert>
 
 void Cachelet::LruPolicy::on_access(const std::string &key){
