@@ -1,7 +1,8 @@
 #pragma once
 #include "cachelet/eviction_policy.hpp"
+#include <list>
 #include <string>
-#include <queue>
+#include <unordered_map>
 
 namespace Cachelet {
     class FifoPolicy : public EvictionPolicy {
@@ -12,5 +13,7 @@ namespace Cachelet {
         std::string victim() override;
 
         private:
+        std::list<std::string> queue;
+        std::unordered_map<std::string, std::list<std::string>::iterator> key_to_node;
     };
 }
