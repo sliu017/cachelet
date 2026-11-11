@@ -29,7 +29,8 @@ add_library(cachelet
     src/eviction_policy.cpp
     src/policies/lru_policy.cpp 
     src/policies/fifo_policy.cpp
-
+    src/policies/sieve_policy.cpp
+    
 )
 target_compile_features(cachelet PUBLIC cxx_std_20)
 set_target_properties(cachelet PROPERTIES CXX_STANDARD_REQUIRED ON)
@@ -77,6 +78,7 @@ target_sources(cache_test
         tests/unit/simulator_test.cpp
         tests/unit/policies/lru_policy_test.cpp # when we begin introducing multiple tests, we will ensure our interface interacts correctly with each
         tests/unit/policies/fifo_policy_test.cpp
+        tests/unit/policies/sieve_policy_test.cpp
 )
 target_compile_options(cache_test PRIVATE -Wall -Wextra)
 target_link_libraries(cache_test PUBLIC cachelet cachelet_sim_lib GTest::gtest_main)
