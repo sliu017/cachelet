@@ -30,6 +30,7 @@ add_library(cachelet
     src/policies/lru_policy.cpp 
     src/policies/fifo_policy.cpp
     src/policies/sieve_policy.cpp
+    src/policies/s3fifo_policy.cpp
     
 )
 target_compile_features(cachelet PUBLIC cxx_std_20)
