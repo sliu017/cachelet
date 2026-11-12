@@ -21,7 +21,12 @@ namespace Cachelet {
         // these generally mirror how they're implemented in libCacheSim. see:
         // https://github.com/1a1a11a/libCacheSim/blob/develop/libCacheSim/cache/eviction/S3FIFO.c
         std::size_t small_capacity; // = 0.1 * capacity;
-        std::size_t main_capacity; // = capacity - small_queue_size;
+
+        // Note: Below value is not a capacity, it's only checked when S is full and we insert to M
+        // if M's size then exceeds this size, we know the cache is full as S.size() = small_capacity and M.size() = capacity - small.capacity()
+        // (Therefore S.size() + M.size() = capacity)
+        std::size_t main_target_size; // = capacity - small_queue_size; 
+
         std::size_t ghost_capacity; // = 0.9 * capacity;
         std::size_t promote_to_main_threshold = 2; // freq >= threshold is the condition for promoting small->main
 
@@ -40,7 +45,9 @@ namespace Cachelet {
         std::list<std::string> ghost_queue; // capped at 90% of total capacity
 
         std::unordered_map<std::string, MapEntry> key_to_list_entry; // maps to elements of small and main queues
-        std::unordered_set<std::string> ghost_set; // incl all elements in the ghost queue, allows membership checks
+        std::unordered_map<std::string, std::list<std::string>::iterator> key_to_ghost_iter;
+
+        std::string evictM();
 
     };
 }
