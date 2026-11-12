@@ -25,5 +25,5 @@ namespace Cachelet {
     };
 
     // name expected to be lowercase, e.g, "lru"
-    std::unique_ptr<EvictionPolicy> make_policy(const std::string &name);
+    std::unique_ptr<EvictionPolicy> make_policy(const std::string& name, std::size_t capacity);
 }

@@ -52,7 +52,7 @@ int main(int argc, char* argv[]){
     std::string policy_string = argv[2];
     std::unique_ptr<Cachelet::EvictionPolicy> policy;
     try {
-        policy = Cachelet::make_policy(policy_string);
+        policy = Cachelet::make_policy(policy_string, capacity);
     } catch(const std::invalid_argument &e){
         std::cerr << e.what() << "\n";
         return 1;

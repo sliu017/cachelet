@@ -67,11 +67,13 @@ std::string Cachelet::S3FifoPolicy::victim(){ // Cache should not be empty
         while(small_queue.size() > 0){
             auto tail = std::prev(small_queue.end());
             if(tail->freq >= promote_to_main_threshold){ // as of now, >= 2 visits, but can be tweaked
+                tail->freq = 0; // libCacheSim does this but it isn't explicitly outlined in the paper, i change to match
                 main_queue.splice(main_queue.begin(), small_queue, tail); // move S's tail out of small and at the head of main
                 key_to_list_entry.at(tail->key).which = Queue::Main; // remember .at doesn't insert if missing, [] does
-                if(main_queue.size() >= main_target_size){ // See note in s3fifo_policy.hpp about main_target_size
-                    return evictM();
-                }
+                // if(main_queue.size() >= main_target_size){ // See note in s3fifo_policy.hpp about main_target_size
+                //     return evictM();
+                // }
+                // ^ the paper's pseudocode includes this trim but libCacheSim doesn't
             } else { // tail hasn't been visited enough :(
                 return tail->key;
             }

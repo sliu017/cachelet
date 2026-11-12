@@ -8,15 +8,15 @@
 #include <memory>
 #include <stdexcept>
 
-std::unique_ptr<Cachelet::EvictionPolicy> Cachelet::make_policy(const std::string &name){
+std::unique_ptr<Cachelet::EvictionPolicy> Cachelet::make_policy(const std::string &name, std::size_t capacity){
     if(name == "lru"){
         return std::make_unique<Cachelet::LruPolicy>();
     } else if(name == "fifo"){
         return std::make_unique<Cachelet::FifoPolicy>();
     } else if(name == "sieve"){
         return std::make_unique<Cachelet::SievePolicy>();
-    } else if(name == "s3fifo"){
-        // return std::make_unique<Cachelet::S3FifoPolicy>(); // NEED TO IMPLEMENT CAPACITY
+    } else if(name == "s3fifov0"){
+        return std::make_unique<Cachelet::S3FifoPolicy>(capacity); // NEED TO IMPLEMENT CAPACITY
     } else { // add other policies here
         
     }
