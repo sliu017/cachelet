@@ -32,6 +32,12 @@ void Cachelet::S3FifoPolicy::on_insert(const std::string &key){ // Cache must no
         small_queue.push_front(new_list_entry);
         is_main_queue = false;
     }
+    // By the way the eviction logic works with the ghost queue, it's possible that we have one key over the limit in ghost
+    // at this point in time. So we need to trim here, in the case that the inserted key wasn't already in the ghost queue.
+    if(ghost_queue.size() > ghost_capacity){ 
+        key_to_ghost_iter.erase(ghost_queue.back());
+        ghost_queue.pop_back();
+    }
     MapEntry new_map_entry = {
         .which = is_main_queue ? Queue::Main : Queue::Small,
         .entry = is_main_queue ? main_queue.begin() : small_queue.begin()
@@ -52,10 +58,13 @@ void Cachelet::S3FifoPolicy::on_remove(const std::string &key, RemoveReason remo
     if(which == Queue::Small && remove_reason == RemoveReason::evicted){
         ghost_queue.push_front(key);
         key_to_ghost_iter.emplace(key, ghost_queue.begin());
-        if(ghost_queue.size() > ghost_capacity){
-            key_to_ghost_iter.erase(ghost_queue.back());
-            ghost_queue.pop_back();
-        }
+        // if(ghost_queue.size() > ghost_capacity){ 
+        //     key_to_ghost_iter.erase(ghost_queue.back());
+        //     ghost_queue.pop_back();
+        // }
+        // UPD: We won't trim right on eviction but rather will on the following insert
+        // (All evictions are called because of insertions, so although this goes over the ghost capacity,
+        // it won't stay that way for an indefinite amount of time) - this is in hopes of matching libCacheSim
         
     }
 }
