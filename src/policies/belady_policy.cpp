@@ -28,6 +28,7 @@ void Cachelet::BeladyPolicy::on_remove(const std::string &key, Cachelet::BeladyP
 std::string Cachelet::BeladyPolicy::victim(){
     assert(!resident.empty()); // undefined behavior for an empty cache
     std::string evicted_string;
-    auto evicted_pair = resident.rbegin();
+    auto evicted_pair = resident.rbegin(); // evict the key that is "furthest away in the future", e.g.
+    // has the most time until next access
     return evicted_pair->second;
 }

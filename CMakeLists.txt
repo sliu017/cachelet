@@ -82,6 +82,7 @@ target_sources(cache_test
         tests/unit/policies/fifo_policy_test.cpp
         tests/unit/policies/sieve_policy_test.cpp
         tests/unit/policies/s3fifo_policy_test.cpp
+        tests/unit/policies/belady_policy_test.cpp
 )
 target_compile_options(cache_test PRIVATE -Wall -Wextra)
 target_link_libraries(cache_test PUBLIC cachelet cachelet_sim_lib GTest::gtest_main)
