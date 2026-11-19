@@ -8,6 +8,7 @@
 #include <iterator>
 #include <string>
 #include <memory>
+#include <optional>
 
 int main(int argc, char* argv[]){
     if(argc != 4){
@@ -52,7 +53,9 @@ int main(int argc, char* argv[]){
     std::string policy_string = argv[2];
     std::unique_ptr<Cachelet::EvictionPolicy> policy;
     try {
-        policy = Cachelet::make_policy(policy_string, capacity);
+        if(policy_string != "belady"){
+            policy = Cachelet::make_policy(policy_string, capacity, std::nullopt);
+        }
     } catch(const std::invalid_argument &e){
         std::cerr << e.what() << "\n";
         return 1;
@@ -64,7 +67,17 @@ int main(int argc, char* argv[]){
         std::cerr << "failed to open file at " << trace_filepath << "\n";
         return 1;
     }
-    Cachelet::sim::SimResult result = Cachelet::sim::simulate(std::istream_iterator<std::string>(trace), {}, capacity, *policy);
+
+    auto trace_iter = std::istream_iterator<std::string>(trace);
+    Cachelet::sim::SimResult result;
+    if(policy_string == "belady"){ // belady needs us to compute the next accessed times vector in O(n), so only do that if needed
+        std::vector<std::string> requests(trace_iter, std::istream_iterator<std::string>{});
+        std::vector<std::size_t> next_accessed_times = Cachelet::sim::compute_next_access_times(requests);
+        policy = Cachelet::make_policy(policy_string, capacity, std::move(next_accessed_times)); // NAT is not used again after
+        result = Cachelet::sim::simulate(requests, capacity, *policy);
+    } else {
+        result = Cachelet::sim::simulate(trace_iter, {}, capacity, *policy);
+    }
     std::size_t total_requests = result.hits + result.misses;
     std::cout << "Results of running trace at " << trace_filepath << " on policy " << policy_string << ":\n";
     std::cout << "Cache hits: " << result.hits << "\n";

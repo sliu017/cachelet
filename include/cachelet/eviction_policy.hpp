@@ -2,6 +2,9 @@
 
 #include <string>
 #include <memory>
+#include <optional>
+#include <vector>
+#include <cstddef>
 
 namespace Cachelet {
     class EvictionPolicy {
@@ -25,5 +28,6 @@ namespace Cachelet {
     };
 
     // name expected to be lowercase, e.g, "lru"
-    std::unique_ptr<EvictionPolicy> make_policy(const std::string& name, std::size_t capacity);
+    std::unique_ptr<EvictionPolicy> make_policy(const std::string& name, std::size_t capacity,
+        const std::optional<std::vector<std::size_t>> &next_accessed_times); // last param is only needed for belady
 }

@@ -5,6 +5,8 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
+#include <limits>
 #include "cachelet/eviction_policy.hpp"
 
 namespace Cachelet::sim{
@@ -43,6 +45,8 @@ namespace Cachelet::sim{
         return result;
     }
 
+    std::vector<std::size_t> compute_next_access_times(const std::vector<std::string> &requests);
+    
     // keeping the vector overload so unit tests still work
     SimResult simulate(const std::vector<std::string> &requests, std::size_t capacity, EvictionPolicy &policy);
 }

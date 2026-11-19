@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-Cachelet::BeladyPolicy::BeladyPolicy(std::vector<std::size_t> next_accessed) :
+Cachelet::BeladyPolicy::BeladyPolicy(const std::vector<std::size_t> &next_accessed) :
     next_accessed(std::move(next_accessed)){}
 
 void Cachelet::BeladyPolicy::on_access(const std::string &key){
