@@ -21,6 +21,6 @@ for size in ${sizes[@]}; do
   echo "=== $policy, size $size ==="
   "$LIBCACHESIM_DIR/_build/bin/cachesim" "${sim_args[0]}" "${sim_args[1]}" "$policy" "$size" \
       --ignore-obj-size=true \
-      -t "time-col=1, obj-id-col=2, obj-size-col=3, obj-id-is-num=1" 2>/dev/null | grep "miss ratio"
+      "time-col=1, obj-id-col=2, obj-size-col=3, obj-id-is-num=1" 2>/dev/null | grep "miss ratio"
   ./build/cachelet-sim "$KEYS" "$policy" "$size" | grep "miss ratio"
 done

@@ -32,7 +32,7 @@ add_library(cachelet
     src/policies/sieve_policy.cpp
     src/policies/s3fifo_policy.cpp
     src/policies/belady_policy.cpp
-    
+    src/policies/approx_lru_policy.cpp
 )
 target_compile_features(cachelet PUBLIC cxx_std_20)
 set_target_properties(cachelet PROPERTIES CXX_STANDARD_REQUIRED ON)

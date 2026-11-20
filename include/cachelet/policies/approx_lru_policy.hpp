@@ -35,7 +35,7 @@ namespace Cachelet {
         std::vector<Entry> resident;
         std::unordered_map<std::string, std::size_t> key_to_index; // maps a string, key, to its position in resident
         std::size_t RANDOM_SAMPLE_SIZE;
-        std::size_t request_index = 0;
+        std::uint64_t request_index = 0;
         std::mt19937 rng;
     };
 }

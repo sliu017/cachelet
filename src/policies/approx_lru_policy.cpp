@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <random>
 #include <cassert>
+#include <limits>
 #include <utility>
 
 Cachelet::ApproxLruPolicy::ApproxLruPolicy(std::size_t RANDOM_SAMPLE_SIZE, std::optional<std::uint32_t> seed) :
@@ -23,7 +24,7 @@ void Cachelet::ApproxLruPolicy::on_insert(const std::string &key){
     resident.push_back(new_entry);
     key_to_index[key] = resident.size() - 1; // key sits at the back of the vector
 }
-void Cachelet::ApproxLruPolicy::on_remove(const std::string &key, Cachelet::EvictionPolicy::RemoveReason remove_reason){
+void Cachelet::ApproxLruPolicy::on_remove(const std::string &key, [[maybe_unused]] Cachelet::EvictionPolicy::RemoveReason remove_reason){
     assert(key_to_index.contains(key));
     std::size_t removed_key_index = key_to_index[key];
     std::swap(resident.back(), resident[removed_key_index]);
@@ -36,7 +37,20 @@ void Cachelet::ApproxLruPolicy::on_remove(const std::string &key, Cachelet::Evic
 }
 
 std::string Cachelet::ApproxLruPolicy::victim(){
-    
+    assert(!resident.empty());
+    assert(RANDOM_SAMPLE_SIZE > 0);
+    std::uniform_int_distribution<std::size_t> dist(0, resident.size()-1); // [0, resident.size() - 1]
+
+    std::size_t evicted_index; // indices measured in size_t, access times measured in unsigned 64bits
+    std::uint64_t lru_time = std::numeric_limits<uint64_t>::max();
+    for(std::size_t i = 0; i < RANDOM_SAMPLE_SIZE; i++){
+        std::size_t random_index = dist(rng);
+        if(resident[random_index].access_index < lru_time){
+            evicted_index = random_index;
+            lru_time = resident[random_index].access_index;
+        }
+    }
+    return resident[evicted_index].key;
 }
 
 /**
