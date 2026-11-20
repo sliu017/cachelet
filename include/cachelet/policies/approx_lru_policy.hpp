@@ -20,7 +20,7 @@ namespace Cachelet {
         public:
         struct Entry {
             // unsigned access_index;
-            std::size_t access_index; // NOTE: due to struct alignment we lose nothing from using a 64bit instead of a 32bit
+            std::uint64_t access_index; // NOTE: due to struct alignment we lose nothing from using a 64bit instead of a 32bit
             // since under a 32 bit, those 4 additional bytes would be padded anyway! (string is 8-byte padded)
             std::string key;
         };
