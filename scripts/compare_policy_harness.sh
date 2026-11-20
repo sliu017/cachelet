@@ -6,12 +6,20 @@ LIBCACHESIM_DIR="${LIBCACHESIM_DIR:-../libCacheSim}"   # override with an env va
 TRACE_CSV="${TRACE_CSV:-$LIBCACHESIM_DIR/data/twitter_cluster52.csv}"
 KEYS="${KEYS:-traces/prod/twitter52_keys.txt}"
 
+LCS_TRACE="${LCS_TRACE:-traces/prod/twitter52.lcs}"
+
 policy="$1"; shift
 sizes=("${@:-10 1000 10000}")
 
+if [[ "$policy" == "belady" ]]; then
+  sim_args=("$LCS_TRACE" lcs)
+else
+  sim_args=("$TRACE_CSV" csv -t "time-col=1, obj-id-col=2, obj-size-col=3, obj-id-is-num=1")
+fi
+
 for size in ${sizes[@]}; do
   echo "=== $policy, size $size ==="
-  "$LIBCACHESIM_DIR/_build/bin/cachesim" "$TRACE_CSV" csv "$policy" "$size" \
+  "$LIBCACHESIM_DIR/_build/bin/cachesim" "${sim_args[0]}" "${sim_args[1]}" "$policy" "$size" \
       --ignore-obj-size=true \
       -t "time-col=1, obj-id-col=2, obj-size-col=3, obj-id-is-num=1" 2>/dev/null | grep "miss ratio"
   ./build/cachelet-sim "$KEYS" "$policy" "$size" | grep "miss ratio"
