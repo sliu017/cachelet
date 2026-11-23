@@ -36,56 +36,65 @@ std::optional<std::string> Cachelet::Cache::set(std::string const &key, std::str
 // if no string was evicted, return nullopt
 std::optional<std::string> Cachelet::Cache::set_helper(std::string const &key, std::string const &value, 
     std::optional<std::chrono::steady_clock::duration> const &ttl){
-    auto existing_it = key_to_entry_map.find(key);
+    auto existing_it = key_to_entry.find(key);
     std::optional<std::chrono::steady_clock::time_point> new_expire_time = std::nullopt;
     if(ttl != std::nullopt){
         new_expire_time = std::chrono::steady_clock::now() + ttl.value();
     }
 
-    if(existing_it != key_to_entry_map.end()){
-        // could possibly be overwritten, so replace the existing value
-        existing_it->second->value = value;
-        // update the expiry time with the new ttl
-        existing_it->second->expire_time = new_expire_time;
-        bring_entry_to_front(existing_it->second);
-    } else {
-        Entry to_ins = {
-            .key = key,
-            .value = value,
-            .expire_time = new_expire_time
-        };
-        // move to front of LRU cache since this entry was most recently accessed
-        lru_cache.push_front(to_ins);
-        // add to key_to_entry_map to allow quick access of the entry in LRU cache
-        key_to_entry_map.insert_or_assign(key, lru_cache.begin());
-        if(this->size() > this->MAX_ENTRIES){
-            // max size reached, evict least recently used
-            std::string key_to_erase = lru_cache.back().key;
-            lru_cache.pop_back();
-            key_to_entry_map.erase(key_to_erase);
-            return key_to_erase;
+    if(existing_it != key_to_entry.end()){ // Key exists?
+        if(existing_it->second.expire_time != std::nullopt &&
+        std::chrono::steady_clock::now() >= existing_it->second.expire_time){
+            // key exists, but is expired
+            key_to_entry.erase(key); // remove expired key from our map
+            policy.on_remove(key, Cachelet::EvictionPolicy::RemoveReason::expired); // policy hook for removing a key
+            // DON'T RETURN, we will treat the key as if it's an entirely new key in the logic outside this if statement
+        } else {
+            // key exists and has not expired
+            // update value and ttl
+            existing_it->second.value = value;
+            existing_it->second.expire_time = new_expire_time;
+
+            // policy hooks
+            policy.on_access(key);
+            return std::nullopt; // no eviction, since the key already exists we don't need to create room
         }
     }
-    return std::nullopt;
+
+    // Key not in cache
+    Entry to_ins = {
+        .value = value,
+        .expire_time = new_expire_time
+    };
+    std::optional<std::string> key_to_erase = std::nullopt;
+    if(this->size() >= this->MAX_ENTRIES){
+        // max size reached, evict victim key based on policy
+        key_to_erase = policy.victim();
+        key_to_entry.erase(*key_to_erase);
+        policy.on_remove(*key_to_erase, Cachelet::EvictionPolicy::RemoveReason::evicted);
+    }
+    // insert the new key
+    key_to_entry.emplace(key, std::move(to_ins));
+    policy.on_insert(key);
+
+    return key_to_erase;
     
 }
 
+// rewritten to align with passing in an EvictionPolicy& p
 std::optional<std::string> Cachelet::Cache::get(std::string const &key){
-    auto it = key_to_entry_map.find(key);
-    if(it != key_to_entry_map.end()){
-        // found!
-
-        // check for expiry
-        if(it->second->expire_time != std::nullopt &&
-            std::chrono::steady_clock::now() >= it->second->expire_time){
-            // expired
-            del(key); 
-            return std::nullopt; // expirations and misses are returned as the same - matches redis
+    auto it = key_to_entry.find(key);
+    if(it != key_to_entry.end()){
+        if(it->second.expire_time != std::nullopt &&
+        std::chrono::steady_clock::now() >= it->second.expire_time){
+            key_to_entry.erase(it);
+            policy.on_remove(key, Cachelet::EvictionPolicy::RemoveReason::expired);
+            return std::nullopt;
         }
-        bring_entry_to_front(it->second);
-        return it->second->value;
+        policy.on_access(key);
+        return it->second.value;
     } else {
-        // did not find, return nullptr-esque value that fits with the optional
+        // no hook, no cache state change
         return std::nullopt;
     }
 }
@@ -113,12 +122,11 @@ void Cachelet::Cache::bring_entry_to_front(std::list<Entry>::iterator entry_it){
 
 void Cachelet::Cache::for_each(const std::function<void (const std::string &key, const std::string &value, 
                 const std::optional<std::chrono::steady_clock::time_point> &expire)> &visit) const {
-    // need to walk in reverse order to preserve LRU property
-    // in reverse order, we pass in the least recently used keys first, which means they are SET first
-    // then in the final cache reconstruction, they will similarly be the least recently used
-    for(const Entry &entry : std::views::reverse(lru_cache)){
-        visit(entry.key, entry.value, entry.expire_time);
-    }
+    // we can guarantee the correct cache contents but nothing about the policy state via this reconstruction
+    // since we're just arbitrarily walking through all entries in the map
+    for(const auto &[key, entry] : key_to_entry){
+        visit(key, entry.value, entry.expire_time);
+    }       
 }
 
 

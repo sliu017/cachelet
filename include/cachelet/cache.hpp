@@ -8,11 +8,13 @@
 #include <unordered_map>
 #include <string>
 
+#include "cachelet/eviction_policy.hpp"
+
 namespace Cachelet {
     class Cache {
         private:
         struct Entry {
-            std::string key; // acts as a double-ended pathway to key_to_entry map
+            // std::string key; // PREVIOUSLY: acts as a double-ended pathway to key_to_entry map, NO LONGER NEEDED
             std::string value;
             std::optional<std::chrono::steady_clock::time_point> expire_time; // Some keys might be set to never expire
         };
@@ -24,6 +26,9 @@ namespace Cachelet {
         // one source of truth for set functions such that we can toggle the (optional) ttl
         std::optional<std::string> set_helper(std::string const &key, std::string const &value, 
             std::optional<std::chrono::steady_clock::duration> const &ttl);
+
+        std::unordered_map<std::string, Entry> key_to_entry;
+        EvictionPolicy& policy; // keeps track of policy state, e.g. data structures, pointers, etc
 
         public:
         Cache(); // TODO: may want to consider removing this default constructor
