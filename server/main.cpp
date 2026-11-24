@@ -2,6 +2,7 @@
 #include "cachelet/dispatch.hpp"
 #include "cachelet/resp.hpp"
 #include "cachelet/aof.hpp"
+#include "cachelet/eviction_policy.hpp"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -18,6 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <memory>
 #include <limits>
 #include <optional>
 
@@ -181,6 +183,8 @@ int main(int argc, char* argv[]){
     int port = 6379; // default port, we will accept a flag too
     std::size_t max_entries = std::numeric_limits<std::size_t>::max();
     std::size_t rewrite_size = Cachelet::AOF::DEFAULT_MIN_REWRITE_SIZE;
+    std::string policy_name = "lru"; // default behavior is LRU
+
     for(int i = 1; i < argc; i++){
         std::string flag = argv[i];
         if(flag == "--appendonly"){
@@ -290,13 +294,34 @@ int main(int argc, char* argv[]){
                 std::cerr << "aof rewrite min size should be an integer greater than 0\n";
                 return 1;
             }
+        } else if(flag == "--policy"){
+            if(i + 1 >= argc){
+                std::cerr << "--policy needs a value!\n";
+                return 1;
+            }
+           policy_name = argv[++i];    
         } else {
             std::cerr << "flag not recognized!\n";
             return 1;
         }
     }
 
-    Cache cache(max_entries);
+    std::unique_ptr<EvictionPolicy> p;
+    try {
+        // we explicitly reject belady since it's an offline-only policy not to be used in production
+        if(policy_name == "belady"){
+            throw std::invalid_argument("belady should not be used in a production cache server, it is offline only");
+        } else if((policy_name == "s3fifov0" || policy_name == "s3fifo") && max_entries == std::numeric_limits<std::size_t>::max()){
+            // s3fifo policies depend on max entries being set, so ensure it's not still the default value (size_t max value)
+            throw std::invalid_argument("s3fifo should have a --maxentries set");
+        }
+        // nullopt is on next accessed times, which is only for belady (used only in simulated runs)
+        p = make_policy(policy_name, max_entries, std::nullopt); 
+    } catch(const std::invalid_argument &e){ // catches an unrecognized policy name
+        std::cerr << e.what() << "\n";
+        return 1;
+    }
+    Cache cache(*p, max_entries);
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock == -1){

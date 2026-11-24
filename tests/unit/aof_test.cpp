@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "cachelet/aof.hpp"
 #include "cachelet/cache.hpp"
+#include "cachelet/policies/lru_policy.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -22,7 +23,8 @@ TEST(ReplayTest, CleanLogRestoresState){
         "*2\r\n$3\r\nDEL\r\n$4\r\nIraq\r\n";             // DEL Iraq
     auto path = write_temp_aof(log);
 
-    Cachelet::Cache cache;
+    Cachelet::LruPolicy p;
+    Cachelet::Cache cache(p);
     Cachelet::replay(path.string(), cache);
 
     EXPECT_EQ(cache.get("Iraq"), std::nullopt);
@@ -34,7 +36,8 @@ TEST(ReplayTest, CleanLogRestoresState){
 TEST(ReplayTest, ReplayWithNoFile){
     auto path = std::filesystem::temp_directory_path() / "cachelet_test.aof";
     std::filesystem::remove(path);   // remove the file
-    Cachelet::Cache cache;
+    Cachelet::LruPolicy p;
+    Cachelet::Cache cache(p);
     EXPECT_NO_THROW(Cachelet::replay(path.string(), cache)); // no file found, but shouldn't throw
     EXPECT_EQ(cache.size(), 0u);
 }
@@ -42,7 +45,8 @@ TEST(ReplayTest, ReplayWithNoFile){
 TEST(ReplayTest, ReplayWithEmptyAOFFile){
     std::string log = ""; // empty AOF
     auto path = write_temp_aof(log);
-    Cachelet::Cache cache;
+    Cachelet::LruPolicy p;
+    Cachelet::Cache cache(p);
     EXPECT_NO_THROW(Cachelet::replay(path.string(), cache));
     EXPECT_EQ(cache.size(), 0u);
 }
@@ -54,7 +58,8 @@ TEST(ReplayTest, IncompleteLog){
     std::string partial = "*2\r\n$3\r\nDEL\r\n$4\r";         // cutoff
     std::string log = valid + partial;
     auto path = write_temp_aof(log);
-    Cachelet::Cache cache;
+    Cachelet::LruPolicy p;
+    Cachelet::Cache cache(p);
     EXPECT_NO_THROW(Cachelet::replay(path.string(), cache));
     EXPECT_EQ(cache.size(), 2u);
     EXPECT_EQ(cache.get("Iraq"), "Baghdad");
@@ -69,6 +74,7 @@ TEST(ReplayTest, CorruptedLog){
         "*3\r\n$5\r\nERROR\r\n$6\r\nBANANA\r\n" // Erroneous line, wrong token count
         "*2\r\n$3\r\nDEL\r\n$4\r\nIraq\r\n";        
     auto path = write_temp_aof(log);
-    Cachelet::Cache cache;
+    Cachelet::LruPolicy p;
+    Cachelet::Cache cache(p);
     EXPECT_THROW(Cachelet::replay(path.string(), cache), std::runtime_error);
 }
