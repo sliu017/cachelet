@@ -1,21 +1,17 @@
 #include "cachelet/cache.hpp"
 
 #include <chrono>
-#include <iterator>
 #include <limits>
-#include <list>
 #include <optional>
 #include <unordered_map>
-#include <ranges>
 #include <string>
 #include <stdexcept>
 
 // construct the default constructor with the system integer limit (e.g. max unsigned value for a 64 bit int on my machine)
-Cachelet::Cache::Cache() : MAX_ENTRIES(std::numeric_limits<std::size_t>::max()){
+Cachelet::Cache::Cache(EvictionPolicy &p) : MAX_ENTRIES(std::numeric_limits<std::size_t>::max()),
+policy(p){}
 
-}
-// need this funky way of constructing due to the const nature of MAX_ENTRIES
-Cachelet::Cache::Cache(std::size_t max_entries) : MAX_ENTRIES(max_entries){
+Cachelet::Cache::Cache(EvictionPolicy &p, std::size_t max_entries) : MAX_ENTRIES(max_entries), policy(p){
     if(this->MAX_ENTRIES <= 0){
         throw std::invalid_argument("Cache capacity must be at least 1!");
     }
@@ -100,10 +96,10 @@ std::optional<std::string> Cachelet::Cache::get(std::string const &key){
 }
 
 bool Cachelet::Cache::del(std::string const &key){
-    auto it = key_to_entry_map.find(key);
-    if(it != key_to_entry_map.end()){
-        lru_cache.erase(it->second);
-        key_to_entry_map.erase(it);
+    auto it = key_to_entry.find(key);
+    if(it != key_to_entry.end()){
+        key_to_entry.erase(key);
+        policy.on_remove(key, Cachelet::EvictionPolicy::RemoveReason::deleted);
         return true;
     } else {
         return false;
@@ -111,13 +107,7 @@ bool Cachelet::Cache::del(std::string const &key){
 }
 
 std::size_t Cachelet::Cache::size() const{
-    return lru_cache.size();
-}
-
-void Cachelet::Cache::bring_entry_to_front(std::list<Entry>::iterator entry_it){
-    // brings the specified entry to the start of the linked list, e.g. it is the most recently used
-    lru_cache.splice(lru_cache.begin(), lru_cache, entry_it);
-    // uses splice to efficiently move the target node to the beginning of the list
+    return key_to_entry.size();
 }
 
 void Cachelet::Cache::for_each(const std::function<void (const std::string &key, const std::string &value, 

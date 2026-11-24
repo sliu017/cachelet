@@ -18,9 +18,6 @@ namespace Cachelet {
             std::string value;
             std::optional<std::chrono::steady_clock::time_point> expire_time; // Some keys might be set to never expire
         };
-        // implemented through std::list, so no need to handle pointers ourselves
-        std::list<Entry> lru_cache; // doubly linked list implementation
-        std::unordered_map<std::string, std::list<Entry>::iterator> key_to_entry_map; // need an iterator to access the data!
         const size_t MAX_ENTRIES;
 
         // one source of truth for set functions such that we can toggle the (optional) ttl
@@ -31,8 +28,8 @@ namespace Cachelet {
         EvictionPolicy& policy; // keeps track of policy state, e.g. data structures, pointers, etc
 
         public:
-        Cache(); // TODO: may want to consider removing this default constructor
-        Cache(std::size_t max_entries); // constructor specifies the max number of entries it can hold
+        Cache(EvictionPolicy& p); // TODO: may want to consider removing this default constructor
+        Cache(EvictionPolicy& p, std::size_t max_entries); // constructor specifies the max number of entries it can hold
         std::optional<std::string> set(std::string const &key, std::string const &value);
         std::optional<std::string> set(std::string const &key, std::string const &value, std::chrono::steady_clock::duration const &ttl);
         std::optional<std::string> get(std::string const &key);
