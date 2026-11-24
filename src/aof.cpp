@@ -293,6 +293,5 @@ auto Cachelet::AOF::rewrite(const Cache &cache) -> RewriteResult{
     needs_fsync = false; // we already fsynced before the rename
     log_size = output.size();
     size_on_last_rewrite = output.size();
-    last_rewrite_attempt = std::chrono::steady_clock::now();
     return RewriteResult::ok;
 }
